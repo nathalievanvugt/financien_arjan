@@ -836,6 +836,7 @@ html{scrollbar-gutter:stable}
 .sal-set .li .grow b{white-space:normal;overflow:visible;text-overflow:clip}
 .sal-set .card-h .row{flex-wrap:wrap;justify-content:flex-end}
 .hz-sal{margin-top:8px;font-size:.84rem;color:var(--ink-3);line-height:1.4}
+.hz-until{margin-top:2px;font-size:.84rem;color:var(--ink-2)}
 
 /* ⓘ: explanation behind a small button (31-10-2026) */
 .ib{display:inline-grid;place-items:center;width:18px;height:18px;margin-left:6px;padding:0;border-radius:50%;border:1px solid var(--line);background:transparent;color:var(--ink-2);font:600 11px/1 ui-serif,Georgia,serif;font-style:italic;vertical-align:middle;cursor:pointer;flex:none}
@@ -1431,7 +1432,7 @@ function freeToSpend() {
   { const gw = typeof groceryInPeriod === 'function' ? groceryInPeriod(p).filter(w => !w.skip && !w.paid && w.date >= known) : []; // boodschappen, like a fixed cost (31-10-2026)
     if (gw.length) lines.push({ key: 'groc', label: `Boodschappen nog over te maken (${gw.length}×)`, v: -r2(sum(gw, w => w.amount)) }); }
   const sv = p.start > known ? sum(savingAccounts().filter(a => !ids.includes(a.id) && !(a.kid)), a => Math.max(0, (+a.plannedPerPeriod || 0) - savedTo(a, p))) : 0;
-  if (sv) lines.push({ key: 'save', label: 'Nog te sparen deze periode', v: -sv });
+  if (sv) lines.push({ key: 'save', label: 'Nog te sparen tot ' + fmtShort(addDays(p.end, 1)), v: -sv });
   lines.push(...kidFreeLinesForParent());
   { const rs = repayEvents(addDays(known, 1) > p.start ? addDays(known, 1) : p.start, p.end); if (rs.length) lines.push({ key: 'repayin', label: 'Terugbetaling kinderopvang nog te ontvangen', v: r2(sum(rs, e => e.amount)) }); }
   { const ms = mortgageEvents(addDays(known, 1) > p.start ? addDays(known, 1) : p.start, p.end); if (ms.length) lines.push({ key: 'mortgage', label: 'Teruggave hypotheekrente nog te ontvangen', v: r2(sum(ms, e => e.amount)) }); }
@@ -1452,7 +1453,7 @@ function budgetFor(p) {
   const res = all('reservations').filter(r => r.date && inP(r.date, p));
   const sv = savingAccounts().filter(a => !(a.kid));
   const rows = [
-    { key: 'Salaris', plan: sal[0]?.net ?? predictSalary(p.start), real: sum(salTx, t => t.amount), income: true, tone: 'in' },
+    { key: 'Salaris', plan: sal[0]?.net ?? predictSalary(p.cal ? payDateIn(p.cm) : p.start), real: sum(salTx, t => t.amount), income: true, tone: 'in' },
     { key: 'Vaste lasten', plan: sum(fx, x => x.amount), real: sum(fx.filter(x => x.paid), x => x.amount), tone: 'fixed' },
     { key: 'Reserveringen', plan: sum(res.filter(r => !r.skip), r => r.amount), real: sum(res, r => r.status === 'Betaald' ? r.amount : resPaid(r)), tone: 'res' },
   ];
@@ -2019,15 +2020,17 @@ function donut(entries, total) {
   const R = 58, SW = 13, CIRC = 2 * Math.PI * R, gap = entries.length > 1 ? 5 : 0; let off = 0;
   let s = `<svg viewBox="0 0 150 150" width="168" height="168" role="img" aria-label="Waar je geld naartoe gaat"><circle cx="75" cy="75" r="${R}" fill="none" stroke="var(--surface-2)" stroke-width="${SW}"/>`;
   entries.forEach(e => { const len = total > 0 ? CIRC * e.v / total : 0; if (len > gap + 0.5) s += `<circle cx="75" cy="75" r="${R}" fill="none" stroke="color-mix(in srgb,${e.color} ${e.deep ? 52 : 58}%,var(--surface))" stroke-width="${SW}" stroke-linecap="round" stroke-dasharray="${(len - gap).toFixed(2)} ${CIRC.toFixed(2)}" stroke-dashoffset="${(-off - gap / 2).toFixed(2)}" transform="rotate(-90 75 75)"><title>${E(e.k)}: ${eur(e.v)}</title></circle>`; off += len; });
-  return s + `<text x="75" y="70" text-anchor="middle" class="dn-l">Deze periode</text><text x="75" y="90" text-anchor="middle" class="dn-v">${E(eur0(total))}</text></svg>`;
+  return s + `<text x="75" y="70" text-anchor="middle" class="dn-l">Deze maand</text><text x="75" y="90" text-anchor="middle" class="dn-v">${E(eur0(total))}</text></svg>`;
 }
 
 /* ================= overview ================= */
-function curPeriod() { if (!UI.period) UI.period = periodOf(today()).start; return periodOf(UI.period); }
-ACT.pprev = () => { UI.period = periodShift(curPeriod(), -1).start; render(); };
-ACT.pnext = () => { UI.period = periodShift(curPeriod(), 1).start; render(); };
-ACT.pnow = () => { UI.period = periodOf(today()).start; render(); };
-const periodBar = p => periodNav(p, 'pprev', 'pnext', periodLabel(p), 'periode', p.start !== periodOf(today()).start ? `<button type="button" class="btn sm ghost" data-act="pnow">Nu</button>` : '');
+/* 3-11-2026: the Overzicht steps through calendar months; only Vrij te besteden counts from salary to salary ("tot 25 nov") */
+const curMonthK = () => { if (!UI.ovMonth) UI.ovMonth = monthKey(today()); return UI.ovMonth; };
+function curPeriod() { return monthP(curMonthK()); }
+ACT.pprev = () => { UI.ovMonth = addMonths(curMonthK(), -1); render(); };
+ACT.pnext = () => { UI.ovMonth = addMonths(curMonthK(), 1); render(); };
+ACT.pnow = () => { UI.ovMonth = monthKey(today()); render(); };
+const periodBar = p => periodNav(p, 'pprev', 'pnext', cap(monthLabel(p.cm)), 'maand', p.cm !== monthKey(today()) ? `<button type="button" class="btn sm ghost" data-act="pnow">Nu</button>` : '');
 
 const POT_COLORS = ['green', 'teal', 'blue', 'indigo', 'purple', 'pink', 'orange', 'mint'];
 /* one colour language for money: same colours as the dashboard ring */
@@ -2058,7 +2061,7 @@ function heroFree(f, o = {}) {
       <div class="hz-l">
         <div class="hz-eyebrow"><span class="ict" style="--ic:var(--gb)">${icon(o.icon || 'wallet')}</span>${E(o.title || 'Vrij te besteden')}</div>
         <div class="hz-amt">${eur(f.total)}</div>
-        ${o.heart ? `<div class="hz-sal">Rekent met je ${MONTHS[+P.start.slice(5, 7) - 1]}salaris van ${dayMonth(P.start)}, tot het volgende salaris op ${dayMonth(pay)}.</div>` : ''}<div class="hz-tags"><span class="tag ${f.saldo < 0 ? 'neg' : 'pos'}">${E(o.saldoLabel || 'Saldo nu')} <b>${eur(f.saldo)}</b></span>${o.extraTag || ''}${f.ccDebt ? `<span class="tag">Na creditcard <b>${eur(f.saldo - f.ccDebt)}</b></span>` : ''}</div>
+        <div class="hz-until">${o.heart ? 'tot je salaris op ' : 'tot '}${dayMonth(pay)}</div>${o.heart ? `<div class="hz-sal">Vrij te besteden rekent van salaris tot salaris: met wat je nu hebt en wat er nog binnenkomt, min wat er nog af moet tot je volgende salaris op ${dayMonth(pay)}.</div>` : ''}<div class="hz-tags"><span class="tag ${f.saldo < 0 ? 'neg' : 'pos'}">${E(o.saldoLabel || 'Saldo nu')} <b>${eur(f.saldo)}</b></span>${o.extraTag || ''}${f.ccDebt ? `<span class="tag">Na creditcard <b>${eur(f.saldo - f.ccDebt)}</b></span>` : ''}</div>
       </div>
       ${o.noRing ? '' : `<div class="hz-ring2" title="Salaris op ${fmtLong(pay)}">${(() => { const r = 42, c = 2 * Math.PI * r;
           return `<div class="hz-r2"><svg viewBox="0 0 100 100" aria-hidden="true"><defs><linearGradient id="fadeR" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="var(--fd-a)"/><stop offset="1" stop-color="var(--fd-b)"/></linearGradient></defs><circle cx="50" cy="50" r="${r}" class="trk"/>${frac > 0 ? `<circle cx="50" cy="50" r="${r}" class="arc" stroke-dasharray="${(c * frac).toFixed(2)} ${c.toFixed(2)}" transform="rotate(-90 50 50)"/>` : ''}</svg><div class="hz-r2c"><b>${left}</b><span>${left === 1 ? 'dag' : 'dagen'}</span></div></div><div class="hz-dl">salaris ${fmtShort(pay)}</div>`; })()}</div>`}
@@ -2067,7 +2070,7 @@ function heroFree(f, o = {}) {
 }
 
 VIEWS.overzicht = () => {
-  const p = curPeriod(), isNow = p.start === periodOf(today()).start;
+  const p = curPeriod(), isNow = p.cm === monthKey(today());
   const fl = flows(p);
   const checks = all('transactions').filter(t => t.status === 'check').length;
   const toLink = all('transactions').filter(t => linkSuggestion(t)).length;
@@ -2081,7 +2084,7 @@ VIEWS.overzicht = () => {
     left = heroFree(f, { heart: true });
   } else {
     const future = p.start > today();
-    left = `<span class="lbl">${future ? 'Begroot over' : 'Over in deze periode'}</span><span class="big">${eur(future ? budgetFor(p).plannedLeft : fl.income - fl.spent - fl.saved)}</span><span class="sub">${future ? 'Verwacht salaris min alles wat gepland is' : 'Ontvangen min uitgegeven en gespaard'}</span>`;
+    left = `<span class="lbl">${future ? 'Begroot over' : 'Over in deze maand'}</span><span class="big">${eur(future ? budgetFor(p).plannedLeft : fl.income - fl.spent - fl.saved)}</span><span class="sub">${future ? 'Verwacht salaris min alles wat gepland is' : 'Ontvangen min uitgegeven en gespaard'}</span>`;
   }
   const duo = isNow && true && true && kids().length;
   const adv = duo && true ? kids().map(k => ({ k, v: kidAdvance(k), own: kidOwnAcc(k) })).filter(x => x.v > 0 && x.own) : [];
@@ -2103,7 +2106,7 @@ VIEWS.overzicht = () => {
   const outTot = sum(entries, e => e.v);
   const donutCard = `
     <div class="card"><div class="card-h"><h2>Waar gaat je geld naartoe</h2></div>
-      ${entries.length ? `<div class="donutwrap"><div class="chart">${donut(entries, outTot)}</div><div class="catlist">${(() => { const pots = entries.filter(e => e.pot), out = []; entries.forEach(e => { if (!e.pot) out.push(e); else if (e === pots[0]) out.push({ k: 'Sparen', v: r2(sum(pots, x => x.v)), rainbow: `conic-gradient(${pots.map((x, i) => `color-mix(in srgb,${x.color} 58%,var(--surface)) ${(i / pots.length * 100).toFixed(1)}% ${((i + 1) / pots.length * 100).toFixed(1)}%`).join(',')})` }); }); return out; })().map(e => `<${e.cat ? `button type="button" class="catrow" data-act="catInsight" data-cat="${E(e.k)}"` : 'div class="catrow"'}><i style="width:10px;height:10px;border-radius:50%;background:${e.rainbow || `color-mix(in srgb,${e.color} ${e.deep ? 52 : 58}%,var(--surface))`}"></i><span>${E(e.k)}</span><b class="num">${eur(e.v)}</b></${e.cat ? 'button' : 'div'}>`).join('')}</div></div>` : emptyState('Nog niets uitgegeven', 'In deze periode is nog niets afgeschreven.')}</div>`;
+      ${entries.length ? `<div class="donutwrap"><div class="chart">${donut(entries, outTot)}</div><div class="catlist">${(() => { const pots = entries.filter(e => e.pot), out = []; entries.forEach(e => { if (!e.pot) out.push(e); else if (e === pots[0]) out.push({ k: 'Sparen', v: r2(sum(pots, x => x.v)), rainbow: `conic-gradient(${pots.map((x, i) => `color-mix(in srgb,${x.color} 58%,var(--surface)) ${(i / pots.length * 100).toFixed(1)}% ${((i + 1) / pots.length * 100).toFixed(1)}%`).join(',')})` }); }); return out; })().map(e => `<${e.cat ? `button type="button" class="catrow" data-act="catInsight" data-cat="${E(e.k)}"` : 'div class="catrow"'}><i style="width:10px;height:10px;border-radius:50%;background:${e.rainbow || `color-mix(in srgb,${e.color} ${e.deep ? 52 : 58}%,var(--surface))`}"></i><span>${E(e.k)}</span><b class="num">${eur(e.v)}</b></${e.cat ? 'button' : 'div'}>`).join('')}</div></div>` : emptyState('Nog niets uitgegeven', 'In deze maand is nog niets afgeschreven.')}</div>`;
 
   const save = savingAccounts();
   const potsHtml = `<div class="card"><div class="card-h"><h2>Spaarpotten</h2><p class="num"><b>${eur(sum(save.filter(a => !isRepay(a)), a => balance(a) || 0))}</b></p></div>${potList(save)}</div>`;
@@ -2169,7 +2172,10 @@ VIEWS.transacties = () => {
       ${UI.tx.filter === 'check' && list.length > 1 ? `<div style="margin:8px 0"><button type="button" class="btn sm" data-arm="allOk">Alle ${list.length} akkoord</button></div>` : ''}
       ${UI.tx.filter === 'link' && list.length ? `<div class="notice info" style="margin:8px 0"><span>Kies per betaling Koppelen of Niet koppelen. Niet koppelen haalt het voorstel weg.</span><button type="button" class="btn sm" data-arm="allLink">Alle ${list.length} koppelen</button></div>` : ''}
       <div class="list" id="txlist">${rows}</div>${list.length > shown.length ? `<div style="text-align:center;margin-top:12px"><button type="button" class="btn" data-act="txMore">Meer tonen</button></div>` : ''}`
-      : (txs.length ? emptyState(UI.tx.filter === 'check' ? 'Alles is gecontroleerd' : UI.tx.filter === 'link' ? 'Alles is gekoppeld' : 'Niets gevonden', UI.tx.filter === 'check' ? 'Er staan geen transacties meer ter controle.' : UI.tx.filter === 'link' ? 'Er zijn geen betalingen meer met een duidelijke vaste last of reservering.' : 'Pas je zoekopdracht of filters aan.') : emptyState('Nog geen transacties', ('Importeer het CSV-bestand van je bank, of voeg een transactie toe.'), btn('Importeren', 'importTx', '', 'primary')))}</div>`;
+      : (txs.length ? (UI.tx.filter === 'all' && !UI.tx.q && !UI.tx.acc && UI.tx.month
+        // 3-11-2026: an empty month is not "niets gevonden": the bank file of that month is not in yet
+        ? emptyState(`Nog geen transacties in ${MONTHS[+UI.tx.month.slice(5) - 1]}`, 'Importeer het bankbestand van deze maand, of bekijk de vorige maand.', btn('Vorige maand bekijken', 'txMPrev') + ' ' + btn('Bankbestand importeren', 'importTx', '', 'primary'))
+        : emptyState(UI.tx.filter === 'check' ? 'Alles is gecontroleerd' : UI.tx.filter === 'link' ? 'Alles is gekoppeld' : 'Niets gevonden', UI.tx.filter === 'check' ? 'Er staan geen transacties meer ter controle.' : UI.tx.filter === 'link' ? 'Er zijn geen betalingen meer met een duidelijke vaste last of reservering.' : 'Pas je zoekopdracht of filters aan.')) : emptyState('Nog geen transacties', ('Importeer het CSV-bestand van je bank, of voeg een transactie toe.'), btn('Importeren', 'importTx', '', 'primary')))}</div>`;
 };
 ACT.txf = el => { UI.tx.filter = el.dataset.v; UI.tx.limit = 120; render(); };
 ACT.txAcc = el => { UI.tx.acc = el.value; render(true); };
@@ -2316,7 +2322,7 @@ ACT.catInsight = el => {
   const pf = potFundedIds(); const txs = activeTx().filter(t => inP(t.date, p) && isSpend(t, pf) && (t.category || 'Overig') === cat).sort((a, b) => a.amount - b.amount);
   const groups = groupByName(txs);
   const budget = +(C().budgets || {})[cat] || 0;
-  const verdict = !avg ? 'Nog geen eerdere periodes om mee te vergelijken.' : Math.abs(cur - avg) / avg < 0.05 ? 'Ongeveer gelijk aan je gemiddelde.' : cur > avg ? `${eur(cur - avg)} meer dan je gemiddelde van ${eur(avg)}.` : `${eur(avg - cur)} minder dan je gemiddelde van ${eur(avg)}.`;
+  const verdict = !avg ? 'Nog geen eerdere maanden om mee te vergelijken.' : Math.abs(cur - avg) / avg < 0.05 ? 'Ongeveer gelijk aan je gemiddelde.' : cur > avg ? `${eur(cur - avg)} meer dan je gemiddelde van ${eur(avg)}.` : `${eur(avg - cur)} minder dan je gemiddelde van ${eur(avg)}.`;
   const share = flows(p).spent > 0 ? cur / flows(p).spent : 0;
   openSheet({ title: cat, cancel: 'Sluiten', wide: true, body: `
     <div class="ins-head"><div><span class="lbl">Deze periode</span><b>${eur(cur)}</b><span class="tsub">${periodLabel(p)}</span></div>
@@ -2386,10 +2392,10 @@ const fxIcon = f => {
   return fxLookTile(f);const m = matchKind(fxText(f), FX_KIND) || NO_KIND;return kindTile(m[1], m[2]);
 };
 VIEWS.vastelasten = () => {
-  if (!UI.fixMonth) UI.fixMonth = periodOf(today()).mk;
+  if (!UI.fixMonth) UI.fixMonth = monthKey(today());
   const mk = UI.fixMonth;
-  // stand-alone: a "month" is the salary period (from pay day, or the Friday before, up to the next pay day)
-  const P = periodByMk(mk);
+  // 3-11-2026: per calendar month: everything that has to be paid in that month
+  const P = monthP(mk);
   // a long period can hold the same monthly cost twice (e.g. on the 24th): show the first one that is still open
   const dueOf = f => {
     const ds = fixedMonthsP(P).map(m => fixedDue(f, m)).filter(d => d && inFixedP(f, d, P));return ds.find(d => !fixedPayment(f, d).paid) || ds[0] || null;
@@ -2411,22 +2417,22 @@ VIEWS.vastelasten = () => {
       let status;
       if (f.active === false) status = pill('Gestopt');
       else if (fixedPaused(f, mk)) status = pill('Pauze tot ' + MONTHS[+f.pauseUntil.slice(5) - 1].slice(0, 3));
-      else if (!due) status = `<span class="small muted">${f.kind === 'jaar' && f.month ? 'In ' + MONTHS[f.month - 1] : 'Niet in deze periode'}</span>`;
+      else if (!due) status = `<span class="small muted">${f.kind === 'jaar' && f.month ? 'In ' + MONTHS[f.month - 1] : 'Niet in deze maand'}</span>`;
       else if (!(f.amount > 0) && !pay.tx) status = `<span class="small muted">—</span>`;
       else if (pay.paid) status = fxPaidPill(f, due, pay) + (pay.tx ? `<div class="tsub">${pay.tx.source === 'import' ? 'uit bankbestand' : 'met de hand'}</div>` : '');
       else status = fxOpenBtn(f, due);
       const last = all('transactions').filter(t => t.fixedId === f.id && t.status !== 'ignored').sort((a, b) => b.date.localeCompare(a.date))[0];
       const subs = [fxBelongLabel(f), f.kind === 'jaar' && f.month ? 'elk jaar in ' + MONTHS[f.month - 1] : f.kind === 'kwartaal' && f.month ? 'elke 3 maanden, o.a. in ' + MONTHS[f.month - 1] : f.kind === 'halfjaar' && f.month ? 'elk half jaar, in ' + MONTHS[f.month - 1] + ' en ' + MONTHS[(f.month + 5) % 12] : '', f.arrears ? `huur ${MONTHS[+mk.slice(5) - 1]}, betalen op ${fmtShort(dateIn(addMonths(mk, 1), f.day || 1))}` : f.day ? 'rond de ' + f.day + 'e' : 'eind van de maand', f.accountId && f.accountId !== mainAcc ? accName(f.accountId) : '', last && Math.abs(-last.amount - f.amount) >= 0.5 && f.amount > 0 ? 'laatst ' + eur(-last.amount) : ''].filter(Boolean);
       return `<tr class="${on(f) ? '' : 'fx-off'}"><td><div class="fx-name">${fxIcon(f)}<div><button type="button" class="link" style="color:var(--ink);text-align:left" data-act="editFixed" data-id="${E(f.id)}"><span class="tname">${E(f.name)}</span></button>${subs.length ? `<div class="tsub">${E(cap(subs.join(' · ')))}</div>` : ''}</div></div></td>
-        <td class="num">${f.amount > 0 ? eur(f.amount) : '<span class="muted">wisselend</span>'}${kind === 'jaar' ? `<div class="tsub">${eur(f.amount / 12)} p/m</div>` : kind === 'kwartaal' ? `<div class="tsub">${eur(f.amount / 3)} p/m</div>` : kind === 'halfjaar' ? `<div class="tsub">${eur(f.amount / 6)} p/m</div>` : ''}</td><td class="num">${status}${(() => { const ds = fixedMonthsP(P).map(m => fixedDue(f, m)).filter(d => d && inFixedP(f, d, P)); return ds.length > 1 ? `<div class="tsub">2× deze periode: ${ds.map(d => fmtShort(d) + (fixedPayment(f, d).paid ? ' betaald' : ' open')).join(', ')}</div>` : ''; })()}</td></tr>`;
+        <td class="num">${f.amount > 0 ? eur(f.amount) : '<span class="muted">wisselend</span>'}${kind === 'jaar' ? `<div class="tsub">${eur(f.amount / 12)} p/m</div>` : kind === 'kwartaal' ? `<div class="tsub">${eur(f.amount / 3)} p/m</div>` : kind === 'halfjaar' ? `<div class="tsub">${eur(f.amount / 6)} p/m</div>` : ''}</td><td class="num">${status}${(() => { const ds = fixedMonthsP(P).map(m => fixedDue(f, m)).filter(d => d && inFixedP(f, d, P)); return ds.length > 1 ? `<div class="tsub">2× deze maand: ${ds.map(d => fmtShort(d) + (fixedPayment(f, d).paid ? ' betaald' : ' open')).join(', ')}</div>` : ''; })()}</td></tr>`;
     }).join('');
     const tot = sum(items.filter(on), f => +f.amount || 0);
     return `<div class="card"><div class="card-h"><h2>${title}</h2><p class="num">${sub}: <b>${eur(tot)}</b></p></div><div class="tablewrap"><table><thead><tr><th>Naam</th><th class="num">Bedrag</th><th class="num">Status</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
   };
   return head('Vaste lasten', (btn('Controleren', 'checkSync')) + btn(icon('plus') + 'Vaste last', 'newFixed', '', 'primary'),
-    periodNav(P, 'fprev', 'fnext', periodLabel(P), 'maand')) +
+    periodNav(P, 'fprev', 'fnext', cap(monthLabel(mk)), 'maand')) +
     topDuo(topCard({ ic: 'vastelasten', label: 'Per maand', amount: eur(perMonth), hint: 'Inclusief jaarabonnementen per maand' }),
-      topCard({ ic: 'wallet', label: 'Betaald van salaris ' + fmtShort(P.start), amount: eur(paidAmt), more: `<span class="bar hz-bar"><i style="width:${dueAmt ? Math.min(100, paidAmt / dueAmt * 100).toFixed(1) : 0}%"></i></span>`, hint: `van ${eur(dueAmt)} · ${dueRows2.filter(x => x.paid).length} van ${dueRows2.length} posten` })) + (`<p class="small muted" style="margin:0">Van het salaris van ${fmtLong(P.start)} betaal je alles wat daarna wordt afgeschreven, tot het volgende salaris op ${fmtLong(addDays(P.end, 1))}. Alleen betalingen in deze periode zetten een post op Betaald.</p>`) +
+      topCard({ ic: 'wallet', label: 'Betaald in ' + MONTHS[+mk.slice(5) - 1], amount: eur(paidAmt), more: `<span class="bar hz-bar"><i style="width:${dueAmt ? Math.min(100, paidAmt / dueAmt * 100).toFixed(1) : 0}%"></i></span>`, hint: `van ${eur(dueAmt)} · ${dueRows2.filter(x => x.paid).length} van ${dueRows2.length} posten` })) + (`<p class="small muted" style="margin:0">Alles wat in ${MONTHS[+mk.slice(5) - 1]} betaald moet worden. Een betaling rond de datum van een post zet hem op Betaald.</p>`) +
     (fxDupCard()) + ((group('maand', 'Maandlasten', 'Per maand') + group('abonnement', 'Abonnementen', 'Per maand') + group('aflossen', 'Aflossen', 'Per maand') + group('sparen', 'Sparen (vaste inleg)', 'Per maand') + group('beleggen', 'Beleggen', 'Per maand') + (fxPotsCard()) + group('kwartaal', 'Elke 3 maanden', 'Per keer') + group('halfjaar', 'Elk half jaar', 'Per keer') + group('jaar', 'Eén keer per jaar', 'Per jaar')) + groceryFixedCard(P)) +
     (all('fixed').length ? '' : `<div class="card">${emptyState('Nog geen vaste lasten', 'Voeg je huur, verzekeringen en abonnementen toe.')}</div>`);
 };
@@ -2523,7 +2529,7 @@ function resForm(r, preset = {}) {
       ${isNew ? F.select('repeat', 'Herhalen', 'once', RES_REPEAT.map(x => [x[0], x[1]])) + F.select('dur', 'Hoe lang', 'forever', [['forever', 'Doorlopend (geen einde)'], ['until', 'Tot en met een datum'], ['times', 'Een aantal keer']], { when: 'repeat=week|month|2month|quarter|year' })
         + F.date('until', 'Tot en met', '', { when: 'dur=until' }) + F.num('times', 'Hoeveel keer in totaal', 12, { step: 1, when: 'dur=times' }) : ''}</div>
       ${!isNew && r.series ? (() => { const sr = resSeries().find(x => x.id === r.series); return sr ? `<div class="notice info" style="margin-top:10px"><span>Hoort bij een reeks: ${(RES_REPEAT.find(x => x[0] === sr.rep) || RES_REPEAT[2])[1].toLowerCase()}, ${sr.until ? 'tot en met ' + fmtShort(sr.until) : 'doorlopend'}.</span><button type="button" class="btn sm" data-arm="seriesStop">Stoppen vanaf deze</button></div>` : ''; })() : ''}
-      <p class="small muted" style="margin-top:6px">De datum bepaalt in welke periode het bedrag meetelt bij Vrij te besteden.</p>
+      <p class="small muted" style="margin-top:6px">De datum bepaalt wanneer het bedrag meetelt bij Vrij te besteden.</p>
       <details class="res-more"${!isNew && (r.status !== 'Gereserveerd' || +r.paid > 0 || r.note || r.type !== 'Reservering' || r.skip) ? ' open' : ''}><summary>Meer: status, al betaald, notitie</summary>
       <div class="grid2" style="margin-top:10px">${F.check('count', 'Telt mee in Vrij te besteden', !r.skip, { cls: 'span2' })}${F.select('status', 'Status', r.status, RES_STATUSES)}${F.money('paid', 'Al betaald', r.paid)}${F.select('type', 'Soort', r.type, ['Reservering', 'Aflossing'])}
       ${F.area('note', 'Notitie', r.note)}</div>
@@ -2575,7 +2581,7 @@ VIEWS.sparen = () => {
   }).join('');
   const g = UI.goal;
   return head('Sparen', btn(icon('plus') + 'Spaarpot', 'newSaving', '', 'primary')) +
-    topDuo(topCard({ ic: 'sparen', label: 'Totaal gespaard', amount: eur(total), hint: 'Spaar- en beleggingsrekeningen' }), topCard({ ic: 'trend', label: 'Inleg per periode', amount: eur(planned), hint: 'Elke 4 weken bij je salaris' })) +
+    topDuo(topCard({ ic: 'sparen', label: 'Totaal gespaard', amount: eur(total), hint: 'Spaar- en beleggingsrekeningen' }), topCard({ ic: 'trend', label: isMonthly() ? 'Inleg per maand' : 'Inleg per periode', amount: eur(planned), hint: isMonthly() ? 'Elke maand bij je salaris' : 'Elke 4 weken bij je salaris' })) +
     (() => { const nrm = accs.filter(a => !isRepay(a)), rep = accs.filter(isRepay);
       return `<div class="card"><div class="card-h"><h2>Spaarpotjes</h2><p class="num">Totaal <b>${eur(total)}</b></p></div>${nrm.length ? potRows(nrm, 0) : emptyState('Nog geen spaarpotten', 'Voeg een spaarpot toe.')}</div>` +
         (rep.length ? `<div class="card"><div class="card-h"><h2>Aflossen</h2><p>Telt niet mee in het totaal</p></div>${potRows(rep, nrm.length)}</div>` : ''); })() +
@@ -2586,7 +2592,7 @@ function goalOut() {
   if (!(t > 0) || !(p > 0)) return `<p class="small muted">Vul een doel en inleg in.</p>`;
   const rest = t - s; if (rest <= 0) return `<p class="pos"><b>Je hebt je doel al bereikt.</b></p>`;
   const n = Math.ceil(rest / p);
-  return `<dl class="kv"><dt>Nog te sparen</dt><dd>${eur(rest)}</dd><dt>Aantal periodes</dt><dd>${n} (${isMonthly() ? n + ' maanden' : nr(n * 4, 0) + ' weken'})</dd><dt>Doel bereikt rond</dt><dd><b>${fmtLong(periodShift(periodOf(today()), n).start)}</b></dd></dl>`;
+  return `<dl class="kv"><dt>Nog te sparen</dt><dd>${eur(rest)}</dd><dt>${isMonthly() ? 'Aantal maanden' : 'Aantal periodes'}</dt><dd>${n} (${isMonthly() ? n + ' maanden' : nr(n * 4, 0) + ' weken'})</dd><dt>Doel bereikt rond</dt><dd><b>${fmtLong(periodShift(periodOf(today()), n).start)}</b></dd></dl>`;
 }
 LIVE.goal = el => { UI.goal[el.dataset.k] = el.value; $('#goalOut').innerHTML = goalOut(); };
 ACT.newSaving = () => accountForm(null, 'spaar');
@@ -2599,7 +2605,7 @@ function accountForm(a, role = 'betaal') {
     title: isNew ? 'Rekening toevoegen' : a.name,
     body: `<div class="grid2">${F.text('name', 'Naam', a.name, { req: 1 })}${F.select('role', 'Soort', a.role, Object.entries(ROLE))}
       ${F.money('balance', 'Saldo', isNew ? null : (cur ?? a.balance), { ph: 'Zoals je bank het nu toont' })}${F.date('balanceDate', 'Saldo aan het eind van', isNew ? today() : (cur != null ? today() : a.balanceDate || today()))}
-      ${F.money('plannedPerPeriod', 'Inleg per periode', a.plannedPerPeriod, { when: 'role=spaar|beleggen' })}${F.money('goal', 'Spaardoel', a.goal, { when: 'role=spaar|beleggen' })}
+      ${F.money('plannedPerPeriod', isMonthly() ? 'Inleg per maand' : 'Inleg per periode', a.plannedPerPeriod, { when: 'role=spaar|beleggen' })}${F.money('goal', 'Spaardoel', a.goal, { when: 'role=spaar|beleggen' })}
       ${F.text('iban', 'IBAN', a.iban, { ph: 'NL00BANK0123456789' })}${F.text('aliases', 'Ook herkennen aan', a.aliases || '', { ph: 'bijv. Beleggen, Flatex' })}${F.check('active', 'In gebruik', a.active !== false)}
       ${F.area('note', 'Notitie', a.note)}</div>
       <p class="small muted">Vul het saldo in zoals je bank het toont. Boekingen na deze datum telt de app er automatisch bij op. Een creditcardschuld vul je negatief in.</p>`,
@@ -3114,7 +3120,7 @@ ACT.editFree = () => {
 ACT.editBudgets = () => {
   const cfg = C(), b = cfg.budgets || {};
   const cats = (cfg.categories || []).filter(c => !['Salaris', 'Inkomsten', 'Terugbetaling', 'Vaste lasten', 'Abonnementen', 'Reserveringen'].includes(c));
-  openSheet({ title: 'Budgetten per periode', body: `<p class="small muted">Leeg laten betekent geen budget.</p><div class="grid2">${cats.map(c => F.money('b:' + c, c, b[c] || null, { ph: '' })).join('')}</div>`,
+  openSheet({ title: 'Budgetten per maand', body: `<p class="small muted">Leeg laten betekent geen budget.</p><div class="grid2">${cats.map(c => F.money('b:' + c, c, b[c] || null, { ph: '' })).join('')}</div>`,
     onSubmit: v => { const nb = {}; Object.entries(v).forEach(([k, x]) => { if (k.startsWith('b:') && isFinite(x) && x > 0) nb[k.slice(2)] = r2(x); }); return saveConfig({ budgets: nb }, 'Budgetten opgeslagen'); } });
 };
 ACT.newTransfer = () => transferForm(null);
@@ -3916,7 +3922,7 @@ ACT.checkSync = () => {
     act.filter(f => !isCarFx(f) && f.car !== false && /auto.*verzeker|wegenbelasting|motorrijtuig/i.test(f.name)).forEach(f => warn.push({ t: `${f.name} lijkt bij de auto te horen, maar staat niet op de pagina Auto.`, go: 'vastelasten' }));
   }
   const f2 = freeToSpend();
-  if (f2.ok) { const fx = fixedInPeriod(p).filter(x => !x.paid && x.due > f2.known && !x.f.kid); row('Vaste lasten nog te betalen deze periode', 'Vaste lasten', sum(fx, x => x.amount), 'Overzicht', -(f2.lines.find(l => l.key === 'fixed')?.v || 0)); }
+  if (f2.ok) { const fx = fixedInPeriod(p).filter(x => !x.paid && x.due > f2.known && !x.f.kid); row('Vaste lasten nog te betalen tot je salaris', 'Vaste lasten', sum(fx, x => x.amount), 'Overzicht', -(f2.lines.find(l => l.key === 'fixed')?.v || 0)); }
   const m = mortgageCfg(); if (m) row('Teruggave hypotheekrente deze maand', 'Inkomsten', mortgageAmount(mk), 'Overzicht (verwacht)', mortgageAmount(mk));
   fxDupGroups().forEach(g => warn.push({ t: `Mogelijk dubbel bij Vaste lasten: ${g.map(f => `${f.name} (${eur(f.amount)})`).join(' en ')}.`, go: 'vastelasten' }));
   act.filter(f => !(+f.amount > 0)).forEach(f => warn.push({ t: `${f.name} heeft geen bedrag.`, go: 'vastelasten' }));
@@ -4112,9 +4118,9 @@ function groceryFixedCard(P) {
   const wd = WEEKDAYS[wdOf(g.anchor)];
   return `<div class="card groc-fx">${headH}
     <div class="card-h" style="margin-top:2px"><h3 style="margin:0">Boodschappen</h3><p class="num">${on.length} × ${on.length && on.every(w => w.amount === on[0].amount) ? eur(on[0].amount) : 'per week'} = <b>${eur(tot)}</b></p></div>
-    ${rows ? `<div class="tablewrap"><table><thead><tr><th>Week</th><th class="num">Bedrag</th><th class="num">Status</th></tr></thead><tbody>${rows}</tbody></table></div>` : '<p class="small muted">Geen boodschappen in deze periode.</p>'}
+    ${rows ? `<div class="tablewrap"><table><thead><tr><th>Week</th><th class="num">Bedrag</th><th class="num">Status</th></tr></thead><tbody>${rows}</tbody></table></div>` : '<p class="small muted">Geen boodschappen in deze maand.</p>'}
     <div class="row" style="margin-top:10px;gap:8px;flex-wrap:wrap"><button type="button" class="btn sm" data-act="groceryEdit">Wijzigen</button><button type="button" class="btn sm ghost" data-act="groceryExtra">${icon('plus')}Extra keer</button></div>
-    <p class="small muted" style="margin-top:8px">Elke ${wd} ${eur(g.week)} naar de boodschappenrekening${g.until ? ', tot en met ' + fmtLong(g.until) : ', doorlopend'}. Een periode loopt van salaris tot salaris, dus soms is het 4 en soms 5 keer. Klopt een week niet? Tik erop om het bedrag aan te passen of hem over te slaan. Wat nog niet is overgemaakt, telt mee in Vrij te besteden.</p></div>`;
+    <p class="small muted" style="margin-top:8px">Elke ${wd} ${eur(g.week)} naar de boodschappenrekening${g.until ? ', tot en met ' + fmtLong(g.until) : ', doorlopend'}. Per maand 4 of 5 keer, net hoeveel vrijdagen er in de maand vallen. Klopt een week niet? Tik erop om het bedrag aan te passen of hem over te slaan. Wat nog niet is overgemaakt, telt mee in Vrij te besteden.</p></div>`;
 }
 const grocerySaveWeek = (d, o, msg) => { const g = groceryPot(), weeks = { ...(g.weeks || {}) }; if (o) weeks[d] = o; else delete weeks[d]; return saveConfig({ groceryPot: { ...g, weeks } }, msg); };
 ACT.groceryWeek = el => {
@@ -4291,9 +4297,8 @@ IC.in = '<path d="M12 20V6M6 12l6-6 6 6"/>';IC.out = '<path d="M12 4v14M6 12l6 6
 {
   // monthly pay: one shared salary period; every 4 weeks: each page keeps its own (as before)
   const own = { fixMonth: null, kidMk: null, period: null, txMonth: '' };
-  const curMk = () => { if (!UI._pmk) UI._pmk = periodOf(today()).mk; return UI._pmk; };
   const prop = (obj, key, get, set, ownKey) => Object.defineProperty(obj, key, { get: () => isMonthly() ? get() : own[ownKey], set: v => { if (isMonthly()) set(v); else own[ownKey] = v; }, configurable: true, enumerable: true });
-  prop(UI, 'fixMonth', curMk, v => { UI._pmk = v || null; }, 'fixMonth');
+  prop(UI, 'fixMonth', () => { if (!UI._cmk) UI._cmk = monthKey(today()); return UI._cmk; }, v => { UI._cmk = v || null; }, 'fixMonth'); // 3-11-2026: Vaste lasten per calendar month, shared with Transacties and Nico
   // Transacties and Nico: calendar months (31-10-2026), shared between those two pages
   const curCm = () => { if (!UI._cmk) UI._cmk = monthKey(today()); return UI._cmk; };
   prop(UI, 'kidMk', curCm, v => { UI._cmk = v || null; }, 'kidMk');
@@ -4336,9 +4341,10 @@ function kidFree(k) {
   const takenL = kidTakenBack(k, p.start, p.end, true), taken = r2(kidTakenBack(k, p.start, p.end) - takenL), paidFx = r2(kidCostsByParent(k, p.start, p.end) - loose);
   const takenOther = r2(Math.max(0, taken - Math.max(0, paidFx - takenL) - loose));
   const nm = n => n === 1 ? '' : 'en';
-  lines.push({ key: 'inc', label: `Toeslagen deze periode${spread ? ` (per kwartaal gespreid: 1/3 per periode)` : all0.length ? ` (${got.length} ontvangen${inc.length ? ', ' + inc.length + ' verwacht' : ''})` : ''}`, v: r2(monthly + spread) });
+  const tot = 'tot ' + fmtShort(addDays(p.end, 1));
+  lines.push({ key: 'inc', label: `Toeslagen ${tot}${spread ? ` (per kwartaal gespreid: 1/3 per maand)` : all0.length ? ` (${got.length} ontvangen${inc.length ? ', ' + inc.length + ' verwacht' : ''})` : ''}`, v: r2(monthly + spread) });
   if (extra) lines.push({ key: 'dep', label: 'Ander geld gestort op ' + (own ? own.name : 'zijn rekening'), v: extra });
-  lines.push({ key: 'fix', label: `Vaste lasten deze periode${fxAll.length ? ` (${fxAll.length - fx.length} betaald${fx.length ? ', ' + fx.length + ' nog te betalen' : ''})` : ''}`, v: -fxSum });
+  lines.push({ key: 'fix', label: `Vaste lasten ${tot}${fxAll.length ? ` (${fxAll.length - fx.length} betaald${fx.length ? ', ' + fx.length + ' nog te betalen' : ''})` : ''}`, v: -fxSum });
   // 31-10-2026: everything taken from his (savings) account is spent on him: one line with his other expenses
   const other = r2(loose + takenOther);
   if (other) lines.push({ key: 'loose', label: 'Andere uitgaven voor ' + k.name, v: -other });
@@ -4783,10 +4789,10 @@ ACT.repayAmt = el => {
    Telt niet mee bij het spaargeld. */
 function investCard() {
   const items = all('fixed').filter(f => fxKindOf(f) === 'beleggen' && f.active !== false).sort((a, b) => a.name.localeCompare(b.name));
-  const P = periodOf(today()), mn = 'deze periode';
+  const P = monthP(monthKey(today())), mn = 'deze maand';
   const paidTx = f => all('transactions').filter(t => t.fixedId === f.id && t.status !== 'ignored' && t.amount < 0).sort((a, b) => b.date.localeCompare(a.date));
   const rows = items.map(f => { const due = fixedDueInP(f, P), pay = due ? fixedPayment(f, due) : null, txs = paidTx(f), tot = -sum(txs, t => t.amount);
-    const st = !due ? '<span class="small muted">Niet in deze periode</span>' : pay.paid ? `<span class="pill ok">Betaald${pay.tx ? ' ' + fmtShort(pay.tx.date) : ''}</span>` : '<span class="small muted">Nog niet betaald</span>';
+    const st = !due ? '<span class="small muted">Niet in deze maand</span>' : pay.paid ? `<span class="pill ok">Betaald${pay.tx ? ' ' + fmtShort(pay.tx.date) : ''}</span>` : '<span class="small muted">Nog niet betaald</span>';
     return `<tr><td><div class="fx-name">${kindTile('trend', 'var(--sys-green)')}<div><button type="button" class="link" style="color:var(--ink);text-align:left" data-act="editFixed" data-id="${E(f.id)}"><span class="tname">${E(f.name)}</span></button><div class="tsub">${eur(f.amount)} per maand${f.day ? ' · rond de ' + f.day + 'e' : ''}</div></div></div></td><td class="num${tot > 0 ? ' pos' : ''}">${eur(tot)}<div class="tsub">${txs.length} keer ingelegd</div></td><td class="num">${st}</td></tr>`; }).join('');
   const recent = items.flatMap(f => paidTx(f).map(t => ({ t, f }))).sort((a, b) => b.t.date.localeCompare(a.t.date)).slice(0, 8);
   const total = -sum(items.flatMap(paidTx), t => t.amount);
