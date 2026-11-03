@@ -843,6 +843,15 @@ html{scrollbar-gutter:stable}
 .ib:hover,.ib[aria-expanded="true"]{color:var(--sys-blue);border-color:currentColor}
 .tipbox{margin:8px 0 10px;padding:10px 12px;border-radius:10px;background:var(--surface-2);border:1px solid var(--line);font-size:13px;line-height:1.45;color:var(--ink-2)}
 .tipbox p{margin:0}.tipbox p+p{margin-top:6px}
+/* import: one choice "Hoort bij" (3-11-2026) */
+.pv-n{min-width:150px}.pv-n b{font-weight:550}
+.pv-hb select{min-width:170px;max-width:240px}
+.pv-dup{margin-top:12px}.pv-dup summary{cursor:pointer;color:var(--ink-2);font-size:.9rem;padding:6px 0}
+/* Instellingen: one list of buttons (3-11-2026) */
+.set-list{padding:6px 0}.set-list .list{gap:0}
+.set-row{display:flex;align-items:center;gap:12px;padding:14px 18px;min-height:52px}
+.set-row .set-v{color:var(--ink-2);font-size:.86rem;text-align:right;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:55%}
+.set-row .set-chev{color:var(--ink-2);font-size:1.2rem;line-height:1}
 
 </style>
 <div class="shell">
@@ -2185,59 +2194,49 @@ ACT.editTx = el => txForm(S.transactions.get(el.dataset.id));
 function txForm(t) {
   const isNew = !t;
   t = t || { date: today(), amount: null, name: '', kind: 'uitgave', category: 'Overig', accountId: mainFreeId() || '', status: 'ok', note: '' };
-  const cats = C().categories || [];
-  const fixedOpts = [['', '— geen —'], ...all('fixed').sort((a, b) => a.name.localeCompare(b.name)).map(f => [f.id, f.name])];
+  // 3-11-2026: one choice "Hoort bij" instead of Soort, Categorie and the separate links
+  const k = kids()[0], own = k && kidOwnAcc(k), hb0 = hbValue(t);
   const resOpts = [['', '— geen —'], ...all('reservations').filter(r => resOpen(r) > 0 || txResIds(t).includes(r.id)).sort((a, b) => (a.date || '').localeCompare(b.date || '')).map(r => [r.id, `${r.name} · ${fmtShort(r.date)} · ${eur(r.amount)}`])];
+  const resWhen = 'hb=' + all('reservations').map(r => 'res:' + r.id).join('|');
   const salOpts = [['', '— geen —'], ...all('salaries').sort((a, b) => b.payDate.localeCompare(a.payDate)).map(s => [s.id, `${fmtD(s.payDate)} · ${eur(s.net)}`])];
   const linkedSal = all('salaries').find(s => s.transactionId === t.id)?.id || '';
   const body = `<div class="grid2">
     ${F.date('date', 'Datum', t.date, { req: 1 })}${F.money('amount', 'Bedrag (min = af)', t.amount, { req: 1, ph: '-12,50' })}
     ${F.text('name', 'Omschrijving', t.name, { req: 1, cls: 'span2' })}
-    ${F.select('accountId', 'Rekening', t.accountId, accOpts('— kies —'))}${F.select('kind', 'Soort', t.kind, KINDS)}
-    ${typeof CAT_IN !== 'undefined' ? F.select('catIn', 'Categorie', catNorm('inkomst', t.category), CAT_IN, { when: 'kind=inkomst' }) + F.select('catOut', 'Categorie', catNorm('uitgave', t.category), CAT_OUT, { when: 'kind=uitgave' }) + (kids().length && true ? kidMoveField(t) + kidTrSelField(t) : '') + (kids().length && true ? kidSelFields(t) : '')
-      : F.select('category', 'Categorie', t.category, [...new Set([...cats, t.category].filter(Boolean))], { when: 'kind=uitgave|inkomst' })}
-    ${txKid(t) ? kidPartyField(t) : ''}
-    ${F.select('toAccountId', 'Naar of van eigen rekening', t.toAccountId || '', accOpts(), { when: 'kind=overboeking|sparen' })}
-    ${F.select('fixedId', 'Hoort bij vaste last', t.fixedId || '', fixedOpts, { when: 'kind=uitgave' })}
-    ${F.select('reservationId', 'Hoort bij reservering', t.reservationId || '', resOpts, { when: 'kind=uitgave' })}
-    ${F.select('reservationId2', 'Ook bij reservering (bijv. 2e termijn)', txResIds(t)[1] || '', resOpts, { when: 'kind=uitgave' })}
-    ${F.select('salaryId', 'Hoort bij salaris', linkedSal, salOpts, { when: 'kind=inkomst' })}
+    ${F.select('accountId', 'Rekening', t.accountId, accOpts('— kies —'))}
+    <label class="f span2">Hoort bij${hbSelect(t, t.accountId, hb0, `name="hb" id="${fid('hb')}"`)}</label>
+    ${own ? kidTrSelField(t, 'hb=own:' + own.id) : ''}
+    ${txKid(t) && !(own && kidTransfer(t, own)) ? kidPartyField(t) : ''}
+    ${resOpts.length > 1 ? F.select('reservationId2', 'Ook bij reservering (bijv. 2e termijn)', txResIds(t)[1] || '', resOpts, { when: resWhen }) : ''}
+    ${salOpts.length > 1 ? F.select('salaryId', 'Hoort bij salaris', linkedSal, salOpts, { when: 'hb=sal' }) : ''}
     ${F.select('status', 'Status', t.status, [['ok', 'Verwerkt'], ['check', 'Te controleren'], ['ignored', 'Negeren (dubbel of fout)']])}
     ${F.area('note', 'Notitie', t.note)}
-    ${F.check('remember', `Onthoud soort en categorie voor deze omschrijving`, false, { cls: 'span2' })}
+    ${F.check('remember', `Onthoud dit voor deze omschrijving`, false, { cls: 'span2' })}
   </div>${t.description && t.description !== t.name ? `<p class="small muted">Oorspronkelijke tekst: ${E(t.description)}</p>` : ''}
-  ${!isNew && t.amount < 0 && !t.fixedId ? `<div class="tx-addfx" data-when="kind=uitgave"><p class="small muted">Komt dit elke maand terug? Zet het in de lijst${kids().length ? ` (staat hierboven iets van ${E(kids()[0].name)}, dan bij ${E(kids()[0].name)})` : ''}:</p>
+  ${!isNew && t.amount < 0 && !t.fixedId ? `<div class="tx-addfx" data-when="hb=${k ? '|loose:' + k.id : ''}"><p class="small muted">Komt dit elke maand terug? Zet het in de lijst${k ? ` (kies hierboven eerst ${E(k.name)}, dan komt het bij ${E(k.name)})` : ''}.</p>
     <div class="grid2" style="margin:6px 0">${F.select('fxFreq', 'Hoe vaak wordt dit betaald?', 'maand', [['maand', 'Elke maand'], ['kwartaal', 'Elke 3 maanden'], ['halfjaar', 'Elk half jaar'], ['jaar', 'Eén keer per jaar']])}</div>
-    <div class="row"><button type="button" class="btn sm" data-act="txAddFixed" data-k="vast">${icon('plus')}Toevoegen als vaste last</button><button type="button" class="btn sm" data-act="txAddFixed" data-k="abonnement">${icon('plus')}Toevoegen als abonnement</button></div>
-    <p class="small muted" style="margin-top:6px">De post blijft daarna elke keer terugkomen. Deze betaling staat er meteen op <i>Betaald</i>.</p></div>` : ''}`;
+    <div class="row"><button type="button" class="btn sm" data-act="txAddFixed" data-k="vast">${icon('plus')}Toevoegen als vaste last</button><button type="button" class="btn sm" data-act="txAddFixed" data-k="abonnement">${icon('plus')}Toevoegen als abonnement</button></div></div>` : ''}`;
   openSheet({
     title: isNew ? 'Transactie toevoegen' : 'Transactie', body, extraFoot: isNew ? '' : delBtn(),
     actions: { delete: () => commit(`${t.name} verwijderd`, [{ col: 'transactions', id: t.id, data: null }, ...resRelinkOps(t, []), ...all('salaries').filter(x => x.transactionId === t.id).map(x => ({ col: 'salaries', id: x.id, data: { ...x, transactionId: null } }))]),
-      txAddFixed: async b => { const form = b.closest('form') || $('#sheet'); const kidOn = !!form.querySelector('[name="kidSelOut"]')?.value; const fq = form.querySelector('[name="fxFreq"]')?.value || 'maand'; closeSheet(); await txAddFixed(t, b.dataset.k === 'vast' ? fq : b.dataset.k, kidOn); } },
+      txAddFixed: async b => { const form = b.closest('form') || $('#sheet'); const kidOn = /^loose:/.test(form.querySelector('[name="hb"]')?.value || ''); const fq = form.querySelector('[name="fxFreq"]')?.value || 'maand'; closeSheet(); await txAddFixed(t, b.dataset.k === 'vast' ? fq : b.dataset.k, kidOn); } },
     onSubmit: async v => {
       if (!isFinite(v.amount) || !v.amount) throw new Error('Vul een geldig bedrag in, bijvoorbeeld -12,50.');
-      if (v.catIn !== undefined) v.category = v.kind === 'inkomst' ? v.catIn : v.catOut;
       const id = t.id || uid('tx');
-      const doc = { ...t, id, date: v.date, amount: r2(v.amount), name: v.name, accountId: v.accountId || null, kind: v.kind,
-        category: v.kind === 'uitgave' || v.kind === 'inkomst' ? v.category : (v.kind === 'sparen' ? 'Sparen' : 'Eigen overboeking'),
-        toAccountId: v.kind === 'overboeking' || v.kind === 'sparen' ? (v.toAccountId || null) : null,
-        fixedId: v.kind === 'uitgave' ? (v.fixedId || null) : null, reservationId: v.kind === 'uitgave' ? (v.reservationId || null) : null, reservationIds: (() => { if (v.kind !== 'uitgave' || !v.reservationId) return null; const ids = [...new Set([v.reservationId, v.reservationId2, ...txResIds(t).slice(2)].filter(Boolean))]; return ids.length > 1 ? ids : null; })(),
-        status: v.status, note: v.note, source: t.source || 'handmatig', createdAt: t.createdAt || new Date().toISOString() };
-      if (doc.fixedId && (doc.category === 'Overig' || !doc.category)) { const f = S.fixed.get(doc.fixedId); doc.category = f?.kind === 'maand' ? 'Vaste lasten' : 'Abonnementen'; }
-      if (doc.reservationId && doc.category === 'Overig') doc.category = 'Reserveringen';
+      let doc = { ...t, id, date: v.date, amount: r2(v.amount), name: v.name, accountId: v.accountId || null, status: v.status, note: v.note, source: t.source || 'handmatig', createdAt: t.createdAt || new Date().toISOString() };
+      const learn = [], hb = v.hb || '';
+      if (isNew || hb !== hb0 || Math.sign(+t.amount || 0) !== Math.sign(doc.amount)) doc = hbApply(doc, hb, learn);
+      if (/^res:/.test(hb) && v.reservationId2 !== undefined) { const ids = [...new Set([doc.reservationId, v.reservationId2, ...txResIds(t).slice(2)].filter(Boolean))]; doc.reservationIds = ids.length > 1 ? ids : null; }
       let moveOps = [];
-      if (v.kidMove !== undefined) { const m = kidMoveApply(doc, t.id ? t : null, !!v.kidMove); Object.assign(doc, m.doc); moveOps = m.ops; if (v.kidMove && v.kidSelTr !== undefined) Object.assign(doc, kidTrSelApply(doc, v.kidSelTr, v.kidTitle)); }
-      if ((v.kind === 'uitgave' || v.kind === 'inkomst') && kids().length && !v.kidMove) {
-        const sv = v.kind === 'uitgave' ? v.kidSelOut : v.kidSelIn;
-        if (sv === 'newfx') { await commit(isNew ? `${doc.name} toegevoegd` : `${doc.name} opgeslagen`, [{ col: 'transactions', id, data: { ...doc, fixedId: null } }]); return txAddFixed(S.transactions.get(id), v.kidFreq || 'maand', true); }
-        Object.assign(doc, kidSelApply(doc, sv || '', t.id ? t : null));
-      }
+      const nowKid = !!own && hb === 'own:' + own.id, wasKid = !!own && kidTransfer(t, own);
+      if (nowKid) { const m = kidMoveApply(doc, t.id ? t : null, true); Object.assign(doc, m.doc); moveOps = m.ops; Object.assign(doc, kidTrSelApply(doc, v.kidSelTr, v.kidTitle)); }
+      else if (wasKid) doc.kidNoMove = true;
       let partyOps = [];
-      if (v.party !== undefined && !v.kidMove) { const r = kidPartyOps(doc, t, v.party); Object.assign(doc, r.doc); partyOps = r.ops; }
-      const ops = [{ col: 'transactions', id, data: doc }, ...(t.id ? resRelinkOps(t, txResIds(doc)) : []), ...partyOps, ...moveOps];
+      if (v.party !== undefined && !nowKid) { const r = kidPartyOps(doc, t, v.party); Object.assign(doc, r.doc); partyOps = r.ops; }
+      const ops = [{ col: 'transactions', id, data: doc }, ...(t.id ? resRelinkOps(t, txResIds(doc)) : []), ...partyOps, ...moveOps, ...(learn.length ? kidLearnOps(learn) : [])];
       // salary link lives on the salary record
       all('salaries').filter(s => s.transactionId === id && s.id !== v.salaryId).forEach(s => ops.push({ col: 'salaries', id: s.id, data: { ...s, transactionId: null } }));
-      if (v.salaryId && v.kind === 'inkomst') { const s = S.salaries.get(v.salaryId); if (s && s.transactionId !== id) ops.push({ col: 'salaries', id: s.id, data: { ...s, transactionId: id } }); }
+      if (v.salaryId && doc.category === 'Salaris') { const s = S.salaries.get(v.salaryId); if (s && s.transactionId !== id) ops.push({ col: 'salaries', id: s.id, data: { ...s, transactionId: id } }); }
       if (v.remember && v.name) {
         const ex = all('rules').find(r => norm(r.pattern) === norm(v.name));
         const rid = ex?.id || uid('rule');
@@ -2969,13 +2968,13 @@ function importAnalysis(items, accountId) {
   const subLike = on.filter(x => !x.fixedId && x.amount < 0 && /sub|abonnement|subscription|premium|claude|anthropic|openai|netflix|spotify|disney|videoland|apple\.com|google|microsoft|adobe/i.test(x.name + ' ' + (x.description || '')));
   if (subLike.length) out.push(`Mogelijk abonnement zonder vaste last: ${subLike.map(x => `${E(x.name)} ${eur(-x.amount)}`).join(', ')}`);
   const refunds = on.filter(x => x.amount > 0 && x.category !== 'Creditcard aflossen' && x.category !== 'Salaris');
-  if (refunds.length) out.push(`Bijschrijvingen: ${refunds.map(x => `${E(x.name)} ${eur(x.amount)}`).join(', ')}. Kies bij Soort of het inkomen, een terugbetaling of een eigen overboeking is.`);
+  if (refunds.length) out.push(`Bijschrijvingen: ${refunds.map(x => `${E(x.name)} ${eur(x.amount)}`).join(', ')}. Kies bij Hoort bij waar het bij hoort.`);
   const big = spend.filter(x => x.amount <= -100);
   if (big.length) out.push(`Grote uitgaven: ${big.map(x => `${E(x.name)} ${eur(-x.amount)}`).join(', ')}`);
   if (out.length) {
     const uniq = xs => { const m = new Map(); xs.forEach(x => m.set(x, (m.get(x) || 0) + 1)); return [...m].map(([k, n]) => n > 1 ? `${k} (${n}×)` : k).join(', '); };
     const bits = [`<b>${on.length} nieuw</b>`, spend.length ? `${spend.length} uitgaven ${eur(-sum(spend, x => x.amount))}` : '', fx.length ? `${fx.length} gekoppeld aan vaste lasten` : '', refunds.length ? `${refunds.length} bijschrijvingen` : '', dup.length ? `${dup.length} staan er al in` : ''].filter(Boolean);
-    const det = [fx.length ? `<li><b>Gekoppeld aan vaste lasten:</b> ${uniq(fx.map(x => E(S.fixed.get(x.fixedId)?.name || x.name)))}</li>` : '', refunds.length ? `<li><b>Bijschrijvingen:</b> ${uniq(refunds.map(x => E(x.name)))}. Kies bij Soort of het inkomen, een terugbetaling of een eigen overboeking is.</li>` : '',
+    const det = [fx.length ? `<li><b>Gekoppeld aan vaste lasten:</b> ${uniq(fx.map(x => E(S.fixed.get(x.fixedId)?.name || x.name)))}</li>` : '', refunds.length ? `<li><b>Bijschrijvingen:</b> ${uniq(refunds.map(x => E(x.name)))}. Kies bij Hoort bij waar het bij hoort.</li>` : '',
       subLike.length ? `<li><b>Mogelijk abonnement zonder vaste last:</b> ${uniq(subLike.map(x => E(x.name)))}</li>` : '', big.length ? `<li><b>Grote uitgaven (€ 100 of meer):</b> ${uniq(big.map(x => E(x.name)))}</li>` : ''].filter(Boolean).join('');
     return `<details class="imp-an imp-an-s"><summary>${bits.join(' · ')}${det ? ' <span class="imp-more">Details</span>' : ''}</summary>${det ? `<ul>${det}</ul>` : ''}</details>`;
   }
@@ -2990,34 +2989,32 @@ function importPreview(rows, accountId, files, meta = {}) {
     const key = r.date + '|' + r2(r.amount) + '|' + norm(r.name);
     if (!dup && seen.has(key)) dup = { level: 'maybe', text: 'Twee keer in dit bestand' };
     seen.add(key);
-    return { i, ...r, ...c, name: c.name || r.name, dup, on: !dup || dup.level === 'maybe' && dup.text === 'Twee keer in dit bestand' };
+    const it = { i, ...r, ...c, name: c.name || r.name, dup, on: !dup || dup.level === 'maybe' && dup.text === 'Twee keer in dit bestand' };
+    if (kids().length && it.kidOn === undefined) it.kidOn = !!it.kidLink && !it.kidOff; // stricter (27-10-2026): a guess is not chosen by itself
+    it.hb0 = it.kidLink && it.kidOn ? it.kidLink : hbValue({ ...it, accountId, ...(it.kidOn === false && it.kidLink ? { kid: false } : {}) }); it.hb = it.hb0;
+    return it;
   });
-  const kindSel = (it) => `<select data-i="${it.i}" data-f="kind" aria-label="Soort">${KINDS.map(([v, l]) => `<option value="${v}" ${v === it.kind ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
-  const catSel = (it) => {
-    it.category = catNorm(it.kind, it.category);return `<select data-i="${it.i}" data-f="category" aria-label="Categorie" ${it.kind === 'overboeking' || it.kind === 'sparen' ? 'hidden' : ''}>${catOptsHtml(it.kind, it.category)}</select>`;
-    return `<select data-i="${it.i}" data-f="category" aria-label="Categorie" ${it.kind === 'overboeking' || it.kind === 'sparen' ? 'hidden' : ''}>${[...new Set([...cats, it.category])].map(c => `<option ${c === it.category ? 'selected' : ''}>${E(c)}</option>`).join('')}</select>`;
-  };
   const A = acc(accountId), cur = balance(A), nb = meta.balance != null ? r2(meta.balance) : null;
   const balDiff = nb != null && (cur == null || Math.abs(cur - nb) >= 0.01);
   const body = `${importAnalysis(items, accountId)}${nb != null ? `<label class="chk imp-bal"><input type="checkbox" id="impBal" ${balDiff ? 'checked' : ''}> <span>${A?.role === 'creditcard' ? `Openstaand bedrag creditcard bijwerken naar <b>${eur(-nb)}</b>` : `Saldo ${E(accName(accountId))} bijwerken naar <b>${eur(nb)}</b>`}${cur != null ? ` <span class="muted">(nu in de app ${eur(A?.role === 'creditcard' ? -cur : cur)}${balDiff ? '' : ', klopt al'})</span>` : ''}</span></label>` : ''}
-    <p>${items.length} transacties gevonden voor <b>${E(accName(accountId))}</b>. ${items.filter(x => !x.on).length ? `${items.filter(x => !x.on).length} staan al in de app en zijn uitgevinkt.` : ''}${items.filter(x => importFill(x)).length ? ` <b>${items.filter(x => importFill(x)).length} daarvan krijgen het rekeningnummer van de tegenpartij erbij</b> (tik op Importeren).` : ''}</p>
-    <div class="tablewrap pv-wrap"><table class="pv"><thead><tr><th></th><th>Datum</th><th>Omschrijving</th><th class="num">Bedrag</th><th>Soort</th><th>Categorie</th>${kids().length ? '<th>' + E(kids()[0].name) + '</th>' : ''}</tr></thead><tbody>
-    ${items.map(it => `<tr data-row="${it.i}" class="${it.on ? '' : 'off'}"><td><input type="checkbox" data-i="${it.i}" data-f="on" ${it.on ? 'checked' : ''} aria-label="Importeren"></td><td class="num">${fmtD(it.date)}</td>
-      <td style="min-width:180px"><input type="text" data-i="${it.i}" data-f="name" value="${E(it.name)}" aria-label="Omschrijving">${it.why || it.dup ? `<div class="tsub">${it.dup ? `<span class="${it.dup.level === 'dup' ? 'neg' : ''}">${E(it.dup.text)}</span>` : ''}${it.dup && it.why ? ' · ' : ''}${E(it.why || '')}</div>` : ''}</td>
-      <td class="num ${it.amount > 0 ? 'pos' : ''}">${eurS(it.amount)}</td><td>${kindSel(it)}</td><td>${catSel(it)}</td>${kidLinkCell(it)}</tr>`).join('')}</tbody></table></div>`;
+    ${(() => { const dupI = items.filter(x => x.dup?.level === 'dup'), main = items.filter(x => x.dup?.level !== 'dup');
+      const row = it => `<tr data-row="${it.i}" class="${it.on ? '' : 'off'}"><td><input type="checkbox" data-i="${it.i}" data-f="on" ${it.on ? 'checked' : ''} aria-label="Importeren"></td><td class="num">${fmtD(it.date)}</td>
+        <td class="pv-n"><b>${E(it.name)}</b>${it.dup ? `<div class="tsub"><span class="pill warn">${it.dup.level === 'dup' ? 'Staat er al in' : 'Lijkt dubbel'}</span> ${E(it.dup.text)}${it.dup.tx ? ` · ${fmtShort(it.dup.tx.date)} ${E(it.dup.tx.name)} ${eurS(it.dup.tx.amount)}` : ''}</div>` : ''}</td>
+        <td class="num ${it.amount > 0 ? 'pos' : ''}">${eurS(it.amount)}</td><td class="pv-hb">${hbSelect({ ...it, accountId }, accountId, it.hb, `data-i="${it.i}" data-f="hb" aria-label="Hoort bij"`)}</td></tr>`;
+      const head = `<thead><tr><th></th><th>Datum</th><th>Omschrijving</th><th class="num">Bedrag</th><th>Hoort bij</th></tr></thead>`;
+      return `<p>${main.length} ${main.length === 1 ? 'transactie' : 'transacties'} voor <b>${E(accName(accountId))}</b>.</p>
+        ${main.length ? `<div class="tablewrap pv-wrap"><table class="pv">${head}<tbody>${main.map(row).join('')}</tbody></table></div>` : ''}
+        ${dupI.length ? `<details class="pv-dup"><summary>${dupI.length} ${dupI.length === 1 ? 'staat' : 'staan'} al in de app${items.filter(x => importFill(x)).length ? ` (${items.filter(x => importFill(x)).length} krijgen het rekeningnummer erbij)` : ''}</summary>
+          <p class="small muted">Deze worden niet geïmporteerd. Klopt het niet, vink er dan een aan om hem toch te importeren.</p>
+          <div class="tablewrap pv-wrap"><table class="pv">${head}<tbody>${dupI.map(row).join('')}</tbody></table></div></details>` : ''}`; })()}`;
   openSheet({
     title: 'Controleer de import', wide: true, body, submit: 'Importeren',
     actions: {
-      kidShowSel: b => { const s = b.parentElement.querySelector('[data-f=kidLink]'); b.remove(); if (s) { s.hidden = false; const it = items[+s.dataset.i]; if (it.kidHint && !it.kidLink) { s.value = it.kidHint; it.kidLink = it.kidHint; it.kidManual = true; } s.focus(); } },
       input: (e) => {
         const el = e.target; const i = el.dataset.i; if (i == null) return;
         const it = items[+i];
-        if (el.dataset.f === 'kidOn') { it.kidOn = el.checked; it.kidManual = true; if (el.checked && it.amount > 0 && it.kind === 'inkomst') { it.category = 'Toeslagen'; const cs = el.closest('tr').querySelector('[data-f=category]'); if (cs) cs.value = 'Toeslagen'; } return; }
         if (el.dataset.f === 'on') { it.on = el.checked; el.closest('tr').classList.toggle('off', !it.on); }
-        else it[el.dataset.f] = el.value;
-        if (el.dataset.f === 'kind') {
-          const cs = el.closest('tr').querySelector('[data-f=category]');cs.hidden = it.kind === 'overboeking' || it.kind === 'sparen';if (it.kind === 'inkomst' && it.category === 'Overig') { it.category = 'Inkomsten'; cs.value = 'Inkomsten'; }cs.innerHTML = catOptsHtml(it.kind, it.category);it.category = cs.value;
-        }
+        else if (el.dataset.f === 'hb') it.hb = el.value;
       },
     },
     onOpen: form => form.addEventListener('change', e => SHEET?.actions?.input?.(e, form)),
@@ -3041,7 +3038,7 @@ function importPreview(rows, accountId, files, meta = {}) {
           fixedId: kind === 'uitgave' ? x.fixedId || null : null, reservationId: kind === 'uitgave' ? x.reservationId || null : null, reservationIds: kind === 'uitgave' && x.reservationIds ? x.reservationIds : null,
           status: x.dup?.level === 'maybe' ? 'check' : 'ok', note: x.dup?.level === 'maybe' ? x.dup.text : '', source: 'import', documentId: docIds[0] || null, createdAt: now, ...(x.counterIban ? { counterIban: String(x.counterIban).trim() } : {}) } };
       });
-      { const learn = []; chosen.forEach((x, n) => { ops[n].data = kidApply(x, ops[n].data, learn); }); if (learn.length) ops.push(...kidLearnOps(learn)); }
+      { const learn = []; chosen.forEach((x, n) => { ops[n].data = x.hb !== x.hb0 ? hbApply(ops[n].data, x.hb, learn) : kidApply(x, ops[n].data, learn); }); if (learn.length) ops.push(...kidLearnOps(learn)); }
       // an imported income that matches an expected extra income ticks that extra off
       const takenTx = new Set();
       for (const x of all('extras').filter(e => e.status !== 'ontvangen' && +e.amount > 0)) {
@@ -3063,37 +3060,48 @@ function importPreview(rows, accountId, files, meta = {}) {
 }
 
 /* ================= settings ================= */
+/* 3-11-2026: Instellingen is one quiet list of buttons; each opens a sheet. Nothing was taken away, only put behind a button. */
+const SET_LOGS = () => all('log').sort((a, b) => b.at.localeCompare(a.at)).slice(0, 12);
 VIEWS.instellingen = () => {
-  const cfg = C(), s = cfg.salary;
-  const accs = accountsSorted();
+  const cfg = C();
   const free = (cfg.freeAccounts || []).map(accName).join(', ') || 'Nog niet gekozen';
   const budgets = Object.entries(cfg.budgets || {}).filter(([, v]) => +v);
-  const logs = all('log').sort((a, b) => b.at.localeCompare(a.at)).slice(0, 12);
-  const rules = all('rules').sort((a, b) => (b.active !== false) - (a.active !== false) || a.pattern.localeCompare(b.pattern));
-  const card = (title, sub, actions, inner) => `<div class="card"><div class="card-h"><div><h2>${title}</h2>${sub ? `<p>${sub}</p>` : ''}</div><div class="row">${actions}</div></div>${inner}</div>`;
-  const kv = pairs => `<dl class="kv">${pairs.map(([k, v]) => `<dt>${E(k)}</dt><dd>${v}</dd>`).join('')}</dl>`;
-  return head('Instellingen') +
-    card('Weergave', 'Alleen voor dit apparaat · Automatisch volgt je telefoon of computer', '', themeSeg()) +
-    card('Rekeningen', 'Saldo en soort per rekening', btn('Saldi bijwerken', 'cleanSlate', '', 'sm') + btn(icon('plus') + 'Rekening', 'newAccount', '', 'sm'),
-      `<div class="list">${accs.map(a => { const b = balance(a); return `<button type="button" class="li" data-act="editAccount" data-id="${E(a.id)}"><span class="grow"><b>${E(a.name)}${a.active === false ? ' <span class="pill">niet in gebruik</span>' : ''}</b><span class="tsub">${ROLE[a.role] || ''}${a.iban ? ' · ' + E(a.iban) : ''}</span></span><span class="amt">${b == null ? '<span class="pill warn">Saldo invullen</span>' : eur(b)}</span></button>`; }).join('')}</div>`) +
-    `<div class="cols">` +
-    card('Vrij te besteden', 'Waarmee het overzicht rekent', btn('Wijzigen', 'editFree', '', 'sm'),
-      kv([['Rekening(en)', E(free)], ['Minimum buffer', eur(+cfg.minBuffer || 0)], ['Huidige periode', periodLabel(periodOf(today()))]])) +
-    card('Budgetten per periode', 'Telt mee in de begroting', btn('Wijzigen', 'editBudgets', '', 'sm'),
-      budgets.length ? kv(budgets.map(([k, v]) => [k, eur(v)])) : '<p class="muted small">Geen budgetten ingesteld.</p>') +
-    `</div><div class="cols">` +
-    card('Vaste overboekingen', 'Naar je eigen rekeningen, op een vast ritme', btn(icon('plus') + 'Overboeking', 'newTransfer', '', 'sm'),
-      all('transfers').length ? `<div class="list">${all('transfers').map(t => `<button type="button" class="li" data-act="editTransfer" data-id="${E(t.id)}"><span class="grow"><b>${E(t.name)}</b><span class="tsub">Elke ${t.intervalDays === 7 ? 'week' : E(t.intervalDays) + ' dagen'} naar ${E(accName(t.toAccountId))}${t.active === false ? ' · gestopt' : ''}</span></span><span class="amt">${eur(t.amount)}</span></button>`).join('')}</div>` : '<p class="muted small">Geen vaste overboekingen.</p>') +
-    card('Salaris', 'Vast salaris per maand en salarisdag. Een salaris toevoegen doe je bij Inkomsten met + Salaris.', btn('Wijzigen', 'salBase', '', 'sm'),
-      kv([['Netto per maand', eur(salaryAt(nextPayDates(1)[0]).net)], ['Salaris komt', 'elke maand op de ' + payDay() + 'e']])) +
-    `</div><div class="cols">` +
-    card('Categorieën', '', btn('Wijzigen', 'editCats', '', 'sm'), `<div class="row" style="gap:6px">${(cfg.categories || []).map(c => pill(c)).join('')}</div>`) +
-    card('Herkenningsregels', 'Bij importeren eerst toegepast', btn(icon('plus') + 'Regel', 'newRule', '', 'sm'),
-      rules.length ? `<div class="list">${rules.map(r => `<button type="button" class="li" data-act="editRule" data-id="${E(r.id)}"><span class="grow"><b>${E(r.pattern)}</b><span class="tsub">${[r.name ? 'Naam ' + r.name : '', r.kind ? kindLabel(r.kind) : '', r.category || ''].filter(Boolean).map(E).join(' · ')}</span></span>${r.active === false ? pill('Uit') : pill('Aan', 'ok')}</button>`).join('')}</div>` : '<p class="muted small">Maak een regel vanuit een transactie met "Onthoud soort en categorie".</p>') +
-    `</div>` +
-    card('Gegevens', 'Alles staat alleen in deze browser op dit apparaat. Maak regelmatig een back-up.', btn('Back-up downloaden', 'backup', '', 'sm') + btn('Transacties als CSV', 'exportCsv', '', 'sm') + btn('Back-up terugzetten', 'restore', '', 'sm') + (btn('Opnieuw instellen', 'setupStart', '', 'sm')),
-      `<h3 style="margin:4px 0 6px">Recente wijzigingen</h3>${logs.length ? `<div class="list">${logs.map(l => `<div class="li"><span class="grow"><b>${E(l.label)}</b><span class="tsub">${fmtD(l.at.slice(0, 10))} ${l.at.slice(11, 16)}</span></span><button type="button" class="btn sm" data-act="undoLog" data-id="${E(l.id)}">Ongedaan maken</button></div>`).join('')}</div>` : '<p class="muted small">Nog geen wijzigingen.</p>'}`);
+  const th = (THEMES.find(([v]) => v === getTheme()) || [, ''])[1];
+  const row = (act, icn, title, stand) => `<button type="button" class="li set-row" data-act="${act}"><span class="grow"><b>${title}</b></span><span class="set-v">${stand}</span><span class="set-chev" aria-hidden="true">›</span></button>`;
+  const rows = [
+    row('setTheme', '', 'Weergave', E(th)),
+    row('setAccounts', '', 'Rekeningen en saldi', `${accountsSorted().filter(a => a.active !== false).length} rekeningen`),
+    row('salBase', '', 'Salaris', `${eur(predictSalary(nextPayDates(1)[0]))} · de ${payDay()}e`),
+    row('editFree', '', 'Vrij te besteden', E(free) + (+cfg.minBuffer ? ' · buffer ' + eur(cfg.minBuffer) : '')),
+    row('editBudgets', '', 'Budgetten', budgets.length ? budgets.length + ' ingesteld' : 'geen'),
+    row('setTransfers', '', 'Vaste overboekingen', `${all('transfers').filter(t => t.active !== false).length || 'geen'}`),
+    row('setRules', '', 'Herkenning bij importeren', `${all('rules').filter(r => r.active !== false).length || 'geen'} regels`),
+    row('setData', '', 'Back-up en gegevens', cfg.lastBackup ? 'laatste back-up ' + fmtShort(cfg.lastBackup) : 'nog geen back-up'),
+    row('setLog', '', 'Recente wijzigingen', SET_LOGS().length ? 'ongedaan maken' : 'geen'),
+    row('setHelp', '', 'Gaat er iets mis?', ''),
+  ].join('');
+  return head('Instellingen') + `<div class="card set-list"><div class="list">${rows}</div></div>`;
 };
+ACT.setTheme = () => openSheet({ title: 'Weergave', body: `${themeSeg()}<p class="small muted" style="margin-top:10px">Alleen voor dit apparaat. Automatisch volgt je telefoon of computer.</p>`, noFoot: true, tapOut: true });
+ACT.setAccounts = () => openSheet({ title: 'Rekeningen en saldi', noFoot: true, tapOut: true,
+  body: `<div class="row" style="gap:8px;margin-bottom:10px">${btn('Saldi bijwerken', 'cleanSlate', '', 'sm')}${btn(icon('plus') + 'Rekening', 'newAccount', '', 'sm')}</div>
+    <div class="list">${accountsSorted().map(a => { const b = balance(a); return `<button type="button" class="li" data-act="editAccount" data-id="${E(a.id)}"><span class="grow"><b>${E(a.name)}${a.active === false ? ' <span class="pill">niet in gebruik</span>' : ''}</b><span class="tsub">${ROLE[a.role] || ''}</span></span><span class="num"><b>${b == null ? '—' : eur(a.role === 'creditcard' ? -b : b)}</b></span></button>`; }).join('')}</div>` });
+ACT.setTransfers = () => openSheet({ title: 'Vaste overboekingen', noFoot: true, tapOut: true,
+  body: `<div class="row" style="margin-bottom:10px">${btn(icon('plus') + 'Overboeking', 'newTransfer', '', 'sm')}</div>
+    ${all('transfers').length ? `<div class="list">${all('transfers').map(t => `<button type="button" class="li" data-act="editTransfer" data-id="${E(t.id)}"><span class="grow"><b>${E(t.name)}</b><span class="tsub">Elke ${t.intervalDays === 7 ? 'week' : E(t.intervalDays) + ' dagen'} naar ${E(accName(t.toAccountId))}${t.active === false ? ' · uit' : ''}</span></span><span class="num"><b>${eur(t.amount)}</b></span></button>`).join('')}</div>` : '<p class="muted">Nog geen vaste overboekingen.</p>'}
+    <p class="small muted" style="margin-top:8px">Naar je eigen rekeningen, op een vast ritme.</p>` });
+ACT.setRules = () => { const rules = all('rules').sort((a, b) => (b.active !== false) - (a.active !== false) || a.pattern.localeCompare(b.pattern));
+  openSheet({ title: 'Herkenning bij importeren', noFoot: true, tapOut: true,
+    body: `<div class="row" style="margin-bottom:10px">${btn(icon('plus') + 'Regel', 'newRule', '', 'sm')}</div>
+      ${rules.length ? `<div class="list">${rules.map(r => `<button type="button" class="li" data-act="editRule" data-id="${E(r.id)}"><span class="grow"><b>${E(r.pattern)}</b><span class="tsub">${[r.name ? 'Naam ' + r.name : '', r.category || ''].filter(Boolean).map(E).join(' · ')}${r.active === false ? ' · uit' : ''}</span></span></button>`).join('')}</div>` : '<p class="muted">Nog geen regels.</p>'}
+      <p class="small muted" style="margin-top:8px">Bij importeren worden deze regels eerst toegepast. Een regel maak je ook met "Onthoud dit voor deze omschrijving" in een transactie.</p>` }); };
+ACT.setData = () => openSheet({ title: 'Back-up en gegevens', noFoot: true, tapOut: true,
+  body: `<div class="stack" style="gap:8px">${btn('Back-up downloaden', 'backup', '', 'primary')}${btn('Back-up terugzetten', 'restore')}${btn('Transacties als CSV', 'exportCsv')}${btn('Alles wissen en opnieuw beginnen', 'setupStart', '', 'danger')}</div>
+    <p class="small muted" style="margin-top:10px">Alles staat alleen in deze browser op dit apparaat. Maak regelmatig een back-up.</p>` });
+ACT.setLog = () => { const logs = SET_LOGS();
+  openSheet({ title: 'Recente wijzigingen', noFoot: true, tapOut: true,
+    body: logs.length ? `<div class="list">${logs.map(l => `<div class="li"><span class="grow"><b>${E(l.label)}</b><span class="tsub">${fmtD(l.at.slice(0, 10))} ${l.at.slice(11, 16)}</span></span><button type="button" class="btn sm" data-act="undoLog" data-id="${E(l.id)}">Ongedaan maken</button></div>`).join('')}</div>` : '<p class="muted">Nog geen wijzigingen.</p>' }); };
+ACT.setHelp = () => openSheet({ title: 'Gaat er iets mis?', noFoot: true, tapOut: true, body: `<p style="margin:0 0 8px">Zo raak je niets kwijt als de app aangepast moet worden:</p>${HELP_FIX}` });
 ACT.newAccount = () => accountForm(null);
 ACT.undoLog = el => undo(el.dataset.id);
 ACT.editFree = () => {
@@ -3109,11 +3117,6 @@ ACT.editBudgets = () => {
   openSheet({ title: 'Budgetten per periode', body: `<p class="small muted">Leeg laten betekent geen budget.</p><div class="grid2">${cats.map(c => F.money('b:' + c, c, b[c] || null, { ph: '' })).join('')}</div>`,
     onSubmit: v => { const nb = {}; Object.entries(v).forEach(([k, x]) => { if (k.startsWith('b:') && isFinite(x) && x > 0) nb[k.slice(2)] = r2(x); }); return saveConfig({ budgets: nb }, 'Budgetten opgeslagen'); } });
 };
-ACT.editCats = () => {
-  const cfg = C();
-  openSheet({ title: 'Categorieën', body: `<label class="f">Eén categorie per regel<textarea name="cats" id="f-cats" rows="14">${E((cfg.categories || []).join('\n'))}</textarea></label><p class="small muted">Bestaande transacties houden hun categorie.</p>`,
-    onSubmit: v => saveConfig({ categories: [...new Set(v.cats.split('\n').map(x => x.trim()).filter(Boolean))] }, 'Categorieën opgeslagen') });
-};
 ACT.newTransfer = () => transferForm(null);
 ACT.editTransfer = el => transferForm(S.transfers.get(el.dataset.id));
 function transferForm(t) {
@@ -3128,7 +3131,7 @@ ACT.editRule = el => ruleForm(S.rules.get(el.dataset.id));
 function ruleForm(r) {
   const isNew = !r; r = r || { pattern: '', name: '', kind: '', category: '', active: true };
   openSheet({ title: isNew ? 'Herkenningsregel' : r.pattern, body: `<div class="grid2">${F.text('pattern', 'Als de omschrijving dit bevat', r.pattern, { req: 1, cls: 'span2' })}${F.text('name', 'Toon als naam (optioneel)', r.name || '')}${F.select('kind', 'Soort', r.kind || '', [['', '— niet wijzigen —'], ...KINDS])}
-      ${F.select('category', 'Categorie', r.category || '', [['', '— niet wijzigen —'], ...(C().categories || [])])}${F.check('active', 'Regel staat aan', r.active !== false)}</div>`,
+      ${F.select('category', 'Categorie', r.category || '', [['', '— niet wijzigen —'], ...[...CAT_OUT, ...CAT_IN].filter(([v], n, xs) => xs.findIndex(x => x[0] === v) === n)])}${F.check('active', 'Regel staat aan', r.active !== false)}</div>`,
     extraFoot: isNew ? '' : delBtn(), actions: { delete: () => del('rules', r.id, 'Regel verwijderd') },
     onSubmit: v => put('rules', { ...r, pattern: v.pattern, name: v.name || null, kind: v.kind || null, category: v.category || null, active: v.active }, 'Regel opgeslagen') });
 }
@@ -3969,8 +3972,6 @@ const HELP_FIX = `<ol class="su-steps">
   document.documentElement.classList.add('los');
   // older data: move the car costs to Vaste lasten once
   for (const pg of ['overzicht', 'vastelasten', 'auto', 'kind']) { const base = VIEWS[pg]; VIEWS[pg] = () => { setTimeout(carFixedMigrate, 0); setTimeout(kidFixedMigrate, 0); return base(); }; }
-  const insBase = VIEWS.instellingen;
-  VIEWS.instellingen = () => insBase().replace(`elke maand op de ${payDay()}e</dd>`, `elke maand op de ${payDay()}e (in het weekend de vrijdag ervoor)</dd>`) + `<div class="card"><div class="card-h"><div><h2>Gaat er iets mis?</h2><p>Zo raak je niets kwijt als de app aangepast moet worden</p></div></div>${HELP_FIX}</div>`;
   ACT.iosTipOff = () => saveConfig({ iosTipOff: true }, 'Tip verborgen');
   const ovBase = VIEWS.overzicht;
   VIEWS.overzicht = () => {
@@ -4035,7 +4036,10 @@ function groceryMatch(g) {
   if (GROC_MEMO && GROC_MEMO.key === key) return GROC_MEMO.map;
   const weeks = groceryWeeksRaw(g, addDays(g.anchor, -7), addDays(today(), 400)), amts = [...new Set([+g.week, ...weeks.map(w => w.amount)])];
   const map = new Map();
-  activeTx().filter(t => groceryCand(g, t, amts) && t.date >= addDays(g.anchor, -3)).sort((a, b) => a.date.localeCompare(b.date)).forEach(t => {
+  // chosen by hand ("Hoort bij" a week of the groceries, 3-11-2026)
+  activeTx().filter(t => t.groceryWeek && !t.groceryNo).forEach(t => { if (weeks.some(w => w.date === t.groceryWeek) && !map.has(t.groceryWeek)) map.set(t.groceryWeek, t); });
+  const handIds = new Set([...map.values()].map(t => t.id));
+  activeTx().filter(t => !handIds.has(t.id) && !t.groceryWeek && groceryCand(g, t, amts) && t.date >= addDays(g.anchor, -3)).sort((a, b) => a.date.localeCompare(b.date)).forEach(t => {
     const win = t.toAccountId && isGrocery(acc(t.toAccountId)) ? 6 : 3;
     const w = weeks.filter(w => !w.skip && !map.has(w.date) && Math.abs(diffDays(t.date, w.date)) <= win).sort((a, b) => Math.abs(diffDays(a.date, t.date)) - Math.abs(diffDays(b.date, t.date)))[0];
     if (w) map.set(w.date, t);
@@ -4350,11 +4354,11 @@ const kidFromName = t => { const k = kids()[0], own = k && kidOwnAcc(k); return 
 const kidTitleOf = t => String(t.kidTitle || '').trim();
 function kidListName(t) { const from = kidFromName(t); return from ? kidTitleOf(t) || from : null; }
 /* transaction form, a transfer with the child's account (31-10-2026): link it to one of his fixed costs or allowances, like other transactions */
-function kidTrSelField(t) {
-  const k = kids()[0], own = k && kidOwnAcc(k); if (!own || !t || !t.id) return '';
+function kidTrSelField(t, when = 'kidMove=true') {
+  const k = kids()[0], own = k && kidOwnAcc(k); if (!own || !t) return '';
   const cur = t.fixedId && S.fixed.get(t.fixedId)?.kid === k.id ? 'fx:' + t.fixedId : t.kidItem ? 'inc:' + t.kidItem : '';
   const opts = [['', 'Nee'], ...kidCosts(k).filter(f => f.active !== false).map(f => ['fx:' + f.id, 'Vaste last van ' + k.name + ': ' + f.name]), ...(k.incomes || []).map(it => ['inc:' + it.id, 'Toeslag van ' + k.name + ': ' + it.name])];
-  return F.text('kidTitle', 'Naam bij ' + k.name, kidTxTitle(t), { cls: 'span2', when: 'kidMove=true' }) + F.select('kidSelTr', 'Hoort bij', cur, opts, { cls: 'span2', when: 'kidMove=true' });
+  return F.text('kidTitle', 'Naam bij ' + k.name, kidTxTitle(t), { cls: 'span2', when }) + F.select('kidSelTr', 'Voor ' + k.name, cur, opts, { cls: 'span2', when });
 }
 function kidTrSelApply(doc, sv, title) {
   const n = String(title ?? '').trim(), bank = String(doc.description || '').replace(/^['"]+|['"]+$/g, '').trim() || doc.name;
@@ -4563,12 +4567,6 @@ function kidClassify(row, out) {
       if (near.length && !out.kidHint) out.kidHint = 'fx:' + near[0].id;
     }
   }
-}
-function kidLinkCell(it) {
-  if (!kids().length) return '';
-  if (it.kidOn === undefined) it.kidOn = !!it.kidLink && !it.kidOff; // stricter (27-10-2026): a guess is not ticked
-  const k1 = kids()[0].name;
-  return `<td class="kid-chk"><label class="chk" title="${it.kidHint && !it.kidLink ? 'De app denkt dat dit van ' + E(k1) + ' is' : ''}"><input type="checkbox" data-i="${it.i}" data-f="kidOn" ${it.kidOn ? 'checked' : ''} aria-label="Hoort bij ${E(k1)}"><span>${E(k1)}</span></label></td>`;
 }
 /* apply the choice to the booking that is about to be saved, and remember it for next time */
 /* the reader's best guess for a booking ticked as the child's */
@@ -4979,6 +4977,70 @@ function zwemFixOps() {
   const cfg = C(); if (!cfg.setupDone || cfg.zwemFix2610) return [];
   const ops = all('fixed').filter(f => /zwem/i.test(f.name) && f.kind === 'maand' && f.kid).map(f => ({ col: 'fixed', id: f.id, data: { ...f, kind: 'kwartaal', amount: 97.5, month: 10, day: 30, paidMonths: { ...(f.paidMonths || {}), '2026-10': true } } }));
   return [...ops, { col: 'config', id: 'main', data: { ...cfg, zwemFix2610: true } }];
+}
+
+/* ================= "Hoort bij" (3-11-2026) =================
+   One choice instead of Soort + Categorie, in the import and in the transaction form: nothing, a fixed cost, a reservation
+   (also a week of the groceries), Nico (his fixed costs, allowances, other), salary, mortgage refund, childcare repayment, or an own account.
+   Kind and category follow from the choice; for "nothing" the category the app recognised stays. */
+const HB_SPECIAL = ['Salaris', 'Hypotheekaftrek', REPAY_CAT, 'Toeslagen', 'Vaste lasten', 'Abonnementen', 'Reserveringen', 'Eigen overboeking', 'Sparen', 'Creditcard aflossen'];
+const hbGroceryAcc = () => accountsSorted().find(a => a.active !== false && isGrocery(a)) || null;
+function hbOptions(t, accountId) {
+  const amt = +t.amount, out = amt < 0, inn = amt > 0, any = !amt, d = t.date || today(), k = kids()[0], groups = [];
+  const g = (label, opts) => { if (opts.length) groups.push([label, opts]); };
+  g('', [['', out ? 'Gewone uitgave' : inn ? 'Gewone inkomst' : 'Niets (gewone uitgave of inkomst)']]);
+  if (out || any) g('Vaste lasten', all('fixed').filter(f => !f.kid && (f.active !== false || f.id === t.fixedId)).sort((a, b) => a.name.localeCompare(b.name)).map(f => ['fx:' + f.id, f.name]));
+  if (out || any) g('Reserveringen', [
+    ...groceryWeeks(addDays(d, -10), addDays(d, 10)).filter(w => !w.skip).map(w => ['gw:' + w.date, `Boodschappen ${WEEKDAYS[wdOf(w.date)].slice(0, 2)} ${fmtShort(w.date)}`]),
+    ...all('reservations').filter(r => resOpen(r) > 0 || txResIds(t).includes(r.id)).sort((a, b) => (a.date || '').localeCompare(b.date || '')).map(r => ['res:' + r.id, `${r.name}${r.date ? ' · ' + fmtShort(r.date) : ''} · ${eur(r.amount)}`])]);
+  if (k) g(k.name, [
+    ...((out || any) ? kidCosts(k).filter(f => f.active !== false || f.id === t.fixedId).map(f => ['fx:' + f.id, 'Vaste last: ' + f.name]) : []),
+    ...((inn || any) ? (k.incomes || []).map(it => ['inc:' + k.id + ':' + it.id, 'Toeslag: ' + it.name]) : []),
+    ['loose:' + k.id, inn ? 'Ander geld voor ' + k.name : 'Andere uitgave voor ' + k.name]]);
+  if (inn || any) g('Inkomsten', [['sal', 'Salaris'], ...(mortgageCfg() ? [['hyp', 'Teruggave hypotheekrente']] : []), ...(repayCfg() || t.category === REPAY_CAT ? [['rep', REPAY_CAT]] : [])]);
+  g('Eigen rekening', accountsSorted().filter(a => a.active !== false && a.id !== (accountId || t.accountId)).map(a => ['own:' + a.id, (inn ? 'Van ' : out ? 'Naar ' : '') + a.name]));
+  return groups;
+}
+function hbValue(t) {
+  if (!t) return '';
+  const k = kids()[0];
+  if (t.kidItem && k && (k.incomes || []).some(i => i.id === t.kidItem) && !(t.toAccountId)) return 'inc:' + k.id + ':' + t.kidItem;
+  if (t.toAccountId && (t.kind === 'overboeking' || t.kind === 'sparen')) return 'own:' + t.toAccountId;
+  if (t.groceryWeek) return 'gw:' + t.groceryWeek;
+  if (t.fixedId && S.fixed.get(t.fixedId)) return 'fx:' + t.fixedId;
+  const r = txResIds(t)[0]; if (r && S.reservations.get(r)) return 'res:' + r;
+  if (k && txKid(t) === k.id) return 'loose:' + k.id;
+  if (t.category === 'Salaris') return 'sal';
+  if (t.category === 'Hypotheekaftrek') return 'hyp';
+  if (t.category === REPAY_CAT) return 'rep';
+  return '';
+}
+/* the select; options of another choice than the current one keep the current one visible */
+function hbSelect(t, accountId, cur, attrs = '') {
+  const groups = hbOptions(t, accountId), has = groups.some(([, o]) => o.some(x => x[0] === cur));
+  const opt = ([v, l]) => `<option value="${E(v)}" ${v === cur ? 'selected' : ''}>${E(l)}</option>`;
+  return `<select ${attrs}>${!has && cur ? `<option value="${E(cur)}" selected>(huidige koppeling)</option>` : ''}${groups.map(([lab, o]) => lab ? `<optgroup label="${E(lab)}">${o.map(opt).join('')}</optgroup>` : o.map(opt).join('')).join('')}</select>`;
+}
+/* kind, category and links from the choice; learn (optional) collects what the import remembers for Nico */
+function hbApply(doc, v, learn = []) {
+  const amt = +doc.amount, base = { ...doc, fixedId: null, reservationId: null, reservationIds: null, toAccountId: null, groceryWeek: null, kidItem: null, kidMk: null };
+  const plain = { kind: amt < 0 ? 'uitgave' : 'inkomst', category: HB_SPECIAL.includes(doc.category) || !doc.category ? (amt < 0 ? 'Overig' : 'Inkomsten') : doc.category };
+  const noKid = x => kids().length ? kidApply({ ...x, kidOn: false, kidManual: true }, x, []) : x;
+  const [type, a, b] = String(v || '').split(':');
+  if (!type) return { ...noKid({ ...base, ...plain }), groceryNo: true };
+  if (type === 'fx') { const f = S.fixed.get(a); if (!f) return doc;
+    if (f.kid) return { ...kidApply({ ...base, kidLink: 'fx:' + f.id, kidOn: true, kidManual: true }, base, learn), groceryNo: true };
+    return { ...noKid({ ...base, kind: 'uitgave', category: (f.kind === 'maand' || f.kind === 'aflossen') ? 'Vaste lasten' : (f.kind === 'sparen' || f.kind === 'beleggen') ? 'Sparen' : 'Abonnementen' }), fixedId: f.id, groceryNo: true }; }
+  if (type === 'res') return { ...noKid({ ...base, kind: 'uitgave', category: 'Reserveringen' }), reservationId: a, reservationIds: doc.reservationId === a && doc.reservationIds ? doc.reservationIds : null, groceryNo: true };
+  if (type === 'gw') { const ga = hbGroceryAcc(); return { ...noKid({ ...base, ...(ga && ga.id !== doc.accountId ? { kind: 'overboeking', category: 'Eigen overboeking', toAccountId: ga.id } : plain) }), groceryWeek: a, groceryNo: null }; }
+  if (type === 'inc' || type === 'loose') return { ...kidApply({ ...base, kidLink: v, kidOn: true, kidManual: true }, base, learn), groceryNo: true };
+  if (type === 'sal') return { ...noKid({ ...base, kind: 'inkomst', category: 'Salaris' }), groceryNo: true };
+  if (type === 'hyp') return { ...noKid({ ...base, kind: 'inkomst', category: 'Hypotheekaftrek' }), groceryNo: true };
+  if (type === 'rep') return { ...noKid({ ...base, kind: 'inkomst', category: REPAY_CAT }), groceryNo: true };
+  if (type === 'own') { const to = acc(a); if (!to) return doc; const own = kids()[0] && kidOwnAcc(kids()[0]);
+    const out = { ...base, kind: isPot(to) ? 'sparen' : 'overboeking', category: isPot(to) ? 'Sparen' : 'Eigen overboeking', toAccountId: to.id, kid: null, kidNoMove: null };
+    return { ...(own && to.id === own.id ? out : noKid(out)), toAccountId: to.id, kind: out.kind, category: out.category, groceryNo: isGrocery(to) ? null : true }; }
+  return doc;
 }
 
 /* ================= start ================= */
