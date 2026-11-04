@@ -1839,7 +1839,8 @@ function render(force) {
   const ph = v.querySelector(':scope > .pagehead');
   if (ph) { let at = ph; for (const n of [...v.children]) { if (n === ph) break; if (n.classList.contains('notice')) { at.after(n); at = n; } } }
   tipify(v);
-  groceryAuto();
+  // after the writes of the commit that caused this render have been queued: a fix-up commit started now could otherwise be overwritten by them (4-11-2026)
+  setTimeout(groceryAuto, 0);
   makeKeyboardable(v);
   VIEWS_AFTER[page.id]?.();
 }
@@ -2111,10 +2112,17 @@ VIEWS.overzicht = () => {
   const save = savingAccounts();
   const potsHtml = `<div class="card"><div class="card-h"><h2>Spaarpotten</h2><p class="num"><b>${eur(sum(save.filter(a => !isRepay(a)), a => balance(a) || 0))}</b></p></div>${potList(save)}</div>`;
 
-  const notes = [checks ? `<div class="notice"><span>${checks} ${checks === 1 ? 'transactie' : 'transacties'} nog controleren</span><button type="button" class="btn sm" data-act="showChecks">Bekijken</button></div>` : '',
+  const notes = [monthEmptyNote(p.cm), checks ? `<div class="notice"><span>${checks} ${checks === 1 ? 'transactie' : 'transacties'} nog controleren</span><button type="button" class="btn sm" data-act="showChecks">Bekijken</button></div>` : '',
     toLink ? `<div class="notice info"><span>${toLink} ${toLink === 1 ? 'betaling hoort' : 'betalingen horen'} waarschijnlijk bij een vaste last of reservering</span><button type="button" class="btn sm" data-act="showLinks">Koppelen</button></div>` : ''].join('');
   return head('Overzicht', '', periodBar(p), (() => { const d = new Date(today() + 'T12:00:00'); const w = cap(DAYS[d.getDay()]); return w + ' ' + d.getDate() + ' ' + MONTHS[d.getMonth()]; })()) + notes + hero + `<div class="cols">${salaryCard()}${donutCard}</div>${potsHtml}${calendarCard()}`;
 };
+/* 4-11-2026: a new month without any bank booking yet looks empty; say why, with the import button */
+function monthEmptyNote(mk) {
+  if (!mk || mk !== monthKey(today()) || !all('transactions').length) return '';
+  const ids = C().freeAccounts || [], m = monthP(mk);
+  if (activeTx().some(t => inP(t.date, m) && (!ids.length || ids.includes(t.accountId)))) return '';
+  return `<div class="notice info month-empty"><span>Nog niets van ${MONTHS[+mk.slice(5) - 1]} ingelezen. Daarom staan bedragen op € 0 en posten nog op Open.</span><button type="button" class="btn sm" data-act="importTx">Bankbestand importeren</button></div>`;
+}
 ACT.showChecks = () => { UI.tx.filter = 'check'; go('transacties'); };
 ACT.fixPaid = async el => {
   const f = S.fixed.get(el.dataset.id); if (!f) return;
@@ -2163,7 +2171,7 @@ VIEWS.transacties = () => {
   const seg = `<div class="seg" role="group"><button type="button" data-act="txf" data-v="all" aria-pressed="${UI.tx.filter === 'all'}">Alles</button><button type="button" data-act="txf" data-v="check" aria-pressed="${UI.tx.filter === 'check'}">Te controleren${nCheck ? ' · ' + nCheck : ''}</button>${nLink || UI.tx.filter === 'link' ? `<button type="button" data-act="txf" data-v="link" aria-pressed="${UI.tx.filter === 'link'}">Te koppelen · ${nLink}</button>` : ''}${nIgn ? `<button type="button" data-act="txf" data-v="ignored" aria-pressed="${UI.tx.filter === 'ignored'}">Genegeerd · ${nIgn}</button>` : ''}</div>`;
   const tools = `<div class="toolbar">${seg}<input type="search" id="tx-q" data-live="txq" placeholder="Zoeken" value="${E(UI.tx.q)}" aria-label="Zoeken">
     <select id="tx-acc" data-onchange="txAcc" aria-label="Rekening"><option value="">Alle rekeningen</option>${accountsSorted().map(a => `<option value="${E(a.id)}" ${UI.tx.acc === a.id ? 'selected' : ''}>${E(a.name)}</option>`).join('')}</select>
-    <select id="tx-month" data-onchange="txMonth" aria-label="Maand"><option value="">Alle maanden</option>${months.map(m => `<option value="${m}" ${UI.tx.month === m ? 'selected' : ''}>${monthLabel(m)}</option>`).join('')}</select></div>`;
+    <button type="button" class="btn sm" data-act="txAllM" aria-pressed="${!UI.tx.month}">${UI.tx.month ? 'Alle maanden' : 'Per maand'}</button></div>`;
   const tmk = UI.tx.month || monthKey(today()), allM = !!(norm(UI.tx.q) || UI.tx.filter !== 'all');
   const tbar = periodNav(null, 'txMPrev', 'txMNext', UI.tx.month ? monthLabel(tmk) : 'Alle maanden', 'maand');
   return head('Transacties', btn(icon('plus') + 'Toevoegen', 'newTx') + btn(icon('upload') + 'Importeren', 'importTx', '', 'primary'), tbar) + tools +
@@ -2180,6 +2188,8 @@ VIEWS.transacties = () => {
 ACT.txf = el => { UI.tx.filter = el.dataset.v; UI.tx.limit = 120; render(); };
 ACT.txAcc = el => { UI.tx.acc = el.value; render(true); };
 ACT.txMonth = el => { UI.tx.month = el.value; render(true); };
+/* 4-11-2026: one month picker (the bar with arrows); this button shows all months at once, or goes back to one month */
+ACT.txAllM = () => { if (UI.tx.month) { UI._txLastM = UI.tx.month; UI.tx.month = ''; } else UI.tx.month = UI._txLastM || monthKey(today()); render(true); };
 ACT.txMPrev = () => { UI.tx.month = addMonths(UI.tx.month || monthKey(today()), -1); UI.tx.limit = 120; render(); };
 ACT.txMNext = () => { UI.tx.month = addMonths(UI.tx.month || monthKey(today()), 1); UI.tx.limit = 120; render(); };
 ACT.txMore = () => { UI.tx.limit += 200; render(); };
@@ -2433,7 +2443,7 @@ VIEWS.vastelasten = () => {
     periodNav(P, 'fprev', 'fnext', cap(monthLabel(mk)), 'maand')) +
     topDuo(topCard({ ic: 'vastelasten', label: 'Per maand', amount: eur(perMonth), hint: 'Inclusief jaarabonnementen per maand' }),
       topCard({ ic: 'wallet', label: 'Betaald in ' + MONTHS[+mk.slice(5) - 1], amount: eur(paidAmt), more: `<span class="bar hz-bar"><i style="width:${dueAmt ? Math.min(100, paidAmt / dueAmt * 100).toFixed(1) : 0}%"></i></span>`, hint: `van ${eur(dueAmt)} · ${dueRows2.filter(x => x.paid).length} van ${dueRows2.length} posten` })) + (`<p class="small muted" style="margin:0">Alles wat in ${MONTHS[+mk.slice(5) - 1]} betaald moet worden. Een betaling rond de datum van een post zet hem op Betaald.</p>`) +
-    (fxDupCard()) + ((group('maand', 'Maandlasten', 'Per maand') + group('abonnement', 'Abonnementen', 'Per maand') + group('aflossen', 'Aflossen', 'Per maand') + group('sparen', 'Sparen (vaste inleg)', 'Per maand') + group('beleggen', 'Beleggen', 'Per maand') + (fxPotsCard()) + group('kwartaal', 'Elke 3 maanden', 'Per keer') + group('halfjaar', 'Elk half jaar', 'Per keer') + group('jaar', 'Eén keer per jaar', 'Per jaar')) + groceryFixedCard(P)) +
+    monthEmptyNote(mk) + (fxDupCard()) + ((group('maand', 'Maandlasten', 'Per maand') + group('abonnement', 'Abonnementen', 'Per maand') + group('aflossen', 'Aflossen', 'Per maand') + group('sparen', 'Sparen (vaste inleg)', 'Per maand') + group('beleggen', 'Beleggen', 'Per maand') + (fxPotsCard()) + group('kwartaal', 'Elke 3 maanden', 'Per keer') + group('halfjaar', 'Elk half jaar', 'Per keer') + group('jaar', 'Eén keer per jaar', 'Per jaar')) + groceryFixedCard(P)) +
     (all('fixed').length ? '' : `<div class="card">${emptyState('Nog geen vaste lasten', 'Voeg je huur, verzekeringen en abonnementen toe.')}</div>`);
 };
 ACT.newFixed = () => fixedForm(null);
@@ -3781,7 +3791,7 @@ function setupOps(s) {
     for (let i = ops.length - 1; i >= 0; i--) { const o = ops[i]; if (o.col === 'fixed' && !o.data.kid && !o.data.car && spec.has(fxDupKey(o.data))) ops.splice(i, 1); } }
   // kinderopvang typed at Vaste lasten belongs to the child
   if (s.kid && String(s.kidName || '').trim()) ops.forEach(o => { if (o.col === 'fixed' && !o.data.kid && /opvang|\bbso\b|kinderdagverblijf|gastouder/i.test(o.data.name)) o.data.kid = 'kid-1'; });
-  ops.push({ col: 'config', id: 'main', data: { ...D, salary, car, setupDone: true, grocStartSet: true, grocStartV2: true, zwemFix2610: true, carFixedDone: true, kidFixDone: true, ownerName: String(s.name || '').trim(), payMode: monthly ? 'maand' : '4weken', payDay: Math.round(n(s.payDay) || 25), salaryAnchor: monthly ? T : s.anchor, freeAccounts: ['acc-main'], minBuffer: r2(n(s.buffer) || 0), budgets, categories, kids: kidsCfg, groceryPot: s.grocery && n(s.groceryWeek) > 0 ? { week: r2(n(s.groceryWeek)), anchor: T, from: T, until: null, weeks: {} } : null, mortgageRefund: s.house && n(s.mortAmt) > 0 ? { day: Math.min(31, Math.max(1, Math.round(n(s.mortDay) || 20))), rates: [{ from: monthKey(T), amount: r2(n(s.mortAmt)) }] } : null, lastBackup: null } });
+  ops.push({ col: 'config', id: 'main', data: { ...D, salary, car, setupDone: true, grocStartSet: true, grocStartV2: true, zwemFix2610: true, belegFix0411: true, carFixedDone: true, kidFixDone: true, ownerName: String(s.name || '').trim(), payMode: monthly ? 'maand' : '4weken', payDay: Math.round(n(s.payDay) || 25), salaryAnchor: monthly ? T : s.anchor, freeAccounts: ['acc-main'], minBuffer: r2(n(s.buffer) || 0), budgets, categories, kids: kidsCfg, groceryPot: s.grocery && n(s.groceryWeek) > 0 ? { week: r2(n(s.groceryWeek)), anchor: T, from: T, until: null, weeks: {} } : null, mortgageRefund: s.house && n(s.mortAmt) > 0 ? { day: Math.min(31, Math.max(1, Math.round(n(s.mortDay) || 20))), rates: [{ from: monthKey(T), amount: r2(n(s.mortAmt)) }] } : null, lastBackup: null } });
   return ops;
 }
 ACT.suFinish = async () => {
@@ -4096,6 +4106,7 @@ function groceryAuto() {
   const run = (msg, ops) => { GROC_BUSY = true; commit(msg, ops, { log: false }).catch(e => console.warn(e)).finally(() => { GROC_BUSY = false; setTimeout(groceryAuto, 0); }); };
   const clean = groceryCleanOps(); if (clean.length) return run('Boodschappen naar Vaste lasten', clean);
   const zw = zwemFixOps(); if (zw.length) return run('Zwemles per kwartaal', zw);
+  const bl = belegFixOps(); if (bl.length) return run('Beleggen als soort Beleggen', bl);
   const mig = groceryStartOps().length ? groceryStartOps() : groceryWeekMigrateOps();
   if (mig.length) return run('Boodschappen per week', mig);
   const sops = resSeriesOps(); if (sops.length) return run('Reeksen bijgewerkt', sops);
@@ -4363,11 +4374,12 @@ function kidListName(t) { const from = kidFromName(t); return from ? kidTitleOf(
 function kidTrSelField(t, when = 'kidMove=true') {
   const k = kids()[0], own = k && kidOwnAcc(k); if (!own || !t) return '';
   const cur = t.fixedId && S.fixed.get(t.fixedId)?.kid === k.id ? 'fx:' + t.fixedId : t.kidItem ? 'inc:' + t.kidItem : '';
-  const opts = [['', 'Nee'], ...kidCosts(k).filter(f => f.active !== false).map(f => ['fx:' + f.id, 'Vaste last van ' + k.name + ': ' + f.name]), ...(k.incomes || []).map(it => ['inc:' + it.id, 'Toeslag van ' + k.name + ': ' + it.name])];
-  return F.text('kidTitle', 'Naam bij ' + k.name, kidTxTitle(t), { cls: 'span2', when }) + F.select('kidSelTr', 'Voor ' + k.name, cur, opts, { cls: 'span2', when });
+  const opts = [['', 'Niets specifieks'], ...kidCosts(k).filter(f => f.active !== false).map(f => ['fx:' + f.id, 'Vaste last van ' + k.name + ': ' + f.name]), ...(k.incomes || []).map(it => ['inc:' + it.id, 'Toeslag van ' + k.name + ': ' + it.name])];
+  // not yet with his account: no name filled in, so the app picks it ("Van Nico" / "Naar Nico" / the purpose) once it is moved
+  return F.text('kidTitle', 'Naam bij ' + k.name, kidTransfer(t, own) ? kidTxTitle(t) : '', { cls: 'span2', when, ph: 'vanzelf' }) + F.select('kidSelTr', 'Voor ' + k.name, cur, opts, { cls: 'span2', when });
 }
 function kidTrSelApply(doc, sv, title) {
-  const n = String(title ?? '').trim(), bank = String(doc.description || '').replace(/^['"]+|['"]+$/g, '').trim() || doc.name;
+  const n = String(title ?? '').trim(), bank = kidTxTitle({ ...doc, kidTitle: null });
   const tt = title === undefined ? {} : { kidTitle: n && n !== bank ? n : null };
   return { ...tt, ...kidTrLink(doc, sv) };
 }
@@ -4395,7 +4407,11 @@ function kidMoveApply(doc, prev, on) {
   return { doc, ops };
 }
 /* for a transfer to the child: the payment description is the title */
-const kidTxTitle = t => { if (kidTitleOf(t)) return kidTitleOf(t); const from = kidFromName(t); if (from) return from; const d = String(t.description || '').replace(/^['"]+|['"]+$/g, '').trim(); return d || t.name || 'Overboeking'; };
+/* 4-11-2026: money to his account is called "Naar Nico", unless the description says what it is for (e.g. "Duinrell", "kinderbijslag") */
+const kidDescPurpose = d => { const rest = String(d || '').replace(/^['"]+|['"]+$/g, '').replace(/referentie:?\s*\S*/gi, ' ').replace(/kenmerk:?\s*\S*/gi, ' ').replace(/\b[a-z]{2}\d{2}[a-z0-9]{4}\d{6,}\b/gi, ' ')
+  .replace(/\S*\d\S*/g, w => /\d{4,}|[0-9a-f]{6,}-/i.test(w) ? ' ' : w).replace(/[^a-zà-ÿ\s'-]/gi, ' ').replace(/\s+/g, ' ').trim();
+  return /[a-zà-ÿ]{3,}/i.test(rest) ? String(d).replace(/^['"]+|['"]+$/g, '').trim() : ''; };
+const kidTxTitle = t => { if (kidTitleOf(t)) return kidTitleOf(t); const from = kidFromName(t); if (from) return from; const d = kidDescPurpose(t.description); const k = kids()[0]; return d || 'Naar ' + (k ? k.name : 'spaarrekening'); };
 /* rename a transfer on the child's page (the title only; the bank text stays) */
 ACT.kidTxName = el => {
   const t = S.transactions.get(el.dataset.id); if (!t) return;
@@ -4404,7 +4420,7 @@ ACT.kidTxName = el => {
       <p class="small muted">Laat leeg om weer de omschrijving van de bank te gebruiken.</p>`,
     extraFoot: `<button type="button" class="btn left" data-act="kidTxFull">Hele transactie</button>`,
     actions: { kidTxFull: () => { closeSheet(); setTimeout(() => txForm(t), 60); } }, // after the close event of this sheet
-    onSubmit: v => { const n = String(v.kidTitle || '').trim(); const bank = String(t.description || '').replace(/^['"]+|['"]+$/g, '').trim() || t.name;
+    onSubmit: v => { const n = String(v.kidTitle || '').trim(); const bank = kidTxTitle({ ...t, kidTitle: null });
       return commit('Naam aangepast', [{ col: 'transactions', id: t.id, data: { ...t, kidTitle: n && n !== bank ? n : null } }]); } });
 };
 ACT.kidTrMore = () => { UI.kidTrLimit = (UI.kidTrLimit || 50) + 50; render(); };
@@ -4863,7 +4879,7 @@ function incomeOverview() {
   const T = today(), cm = monthKey(T), cur = monthP(cm), nNext = 1 + (UI.incNext || 0), nPrev = UI.incPrev || 0;
   const next = Array.from({ length: nNext }, (_, i) => monthP(addMonths(cm, i + 1)));
   const prev = Array.from({ length: nPrev }, (_, i) => monthP(addMonths(cm, -(i + 1))));
-  return `<div class="row inc-tools"><button type="button" class="btn sm ghost" data-act="mortgageEdit">Hypotheekrente ${mortgageCfg() ? 'wijzigen' : 'instellen'}</button><button type="button" class="btn sm ghost" data-act="salInfo">Salaris per jaar</button></div>`
+  return `<div class="row inc-tools"><button type="button" class="btn sm" data-act="salMonths">Salaris per maand</button><button type="button" class="btn sm" data-act="mortgageEdit">Hypotheekrente ${mortgageCfg() ? 'wijzigen' : 'instellen'}</button><button type="button" class="btn sm" data-act="salInfo">Salaris per jaar</button></div>`
     + incPeriodCard(cur, 'nu') + next.map(x => incPeriodCard(x, 'komt nog')).join('')
     + `<div class="inc-more"><button type="button" class="btn" data-act="incNextMore">Volgende maanden tonen</button>${UI.incNext ? '<button type="button" class="btn ghost" data-act="incNextLess">Minder</button>' : ''}</div>`
     + (nPrev ? `<h3 class="xh" style="margin:0 0 -8px">Eerdere maanden</h3>` + prev.map(x => incPeriodCard(x)).join('') : '')
@@ -4970,7 +4986,31 @@ ACT.salChange = (el, e, pre = {}) => { const s = C().salary, c = (s.changes || [
       return saveConfig({ salary: { ...C().salary, mode: 'vast', changes: [...rest, n] } }, `Salaris ${once ? 'alleen' : 'vanaf'} ${salMonthTxt(from)}: ${eur(t.net)}`); } });
 };
 /* tapping an expected salary in a period: change just that month */
-ACT.planSalary = el => { const mk = monthKey(el.dataset.d), c = salChanges().find(x => x.once && x.from === mk); ACT.salChange(c ? { dataset: { id: c.id } } : null, null, { mk, once: true }); };
+ACT.planSalary = el => ACT.salMonth({ dataset: { mk: monthKey(el.dataset.d) } });
+/* 4-11-2026: "Salaris per maand": every month with its salary; tap one to change it, for that month only or also the months after it.
+   The fixed salary itself stays as it is; a change is stored in config.salary.changes (once = only that month, otherwise from that month on). */
+const salMonthInfo = mk => { const d = payDateIn(mk), net = predictSalary(d), once = salChanges().find(c => c.once && c.from === mk), from = salChanges().find(c => !c.once && c.from === mk), got = incSalary(monthP(mk));
+  return { mk, d, net, once, from, got: got.tx ? r2(+got.tx.amount) : got.man ? r2(+got.man) : null }; };
+ACT.salMonths = () => {
+  const cm = monthKey(today()), ms = []; for (let mk = addMonths(cm, -1); mk <= addMonths(cm, 13); mk = addMonths(mk, 1)) ms.push(salMonthInfo(mk));
+  const tag = x => x.once ? '<span class="pill warn">alleen deze maand</span>' : x.from ? '<span class="pill">vanaf deze maand</span>' : '';
+  openSheet({ title: 'Salaris per maand', noFoot: true, tapOut: true,
+    body: `<div class="list sal-months">${ms.map(x => `<button type="button" class="li" data-act="salMonth" data-list="1" data-mk="${x.mk}"><span class="grow"><b>${cap(salMonthTxt(x.mk))}</b><span class="tsub">${x.got != null ? 'ontvangen · verwacht was ' + eur(x.net) : fmtShort(x.d)}</span></span><span class="num"><b class="${x.got != null ? 'pos' : ''}">${eur(x.got != null ? x.got : x.net)}</b>${tag(x) ? `<span class="tsub">${tag(x)}</span>` : ''}</span></button>`).join('')}</div>
+      <p class="small muted" style="margin-top:8px">Netto salaris dat de app per maand verwacht. Tik op een maand om het bedrag te wijzigen: alleen voor die maand, of ook voor de maanden erna. Het vaste salaris (${eur(+C().salary.fixedNet || 0)}) blijft staan; dat wijzig je bij Instellingen › Salaris.</p>` });
+};
+ACT.salMonth = el => {
+  const x = salMonthInfo(el.dataset.mk), has = x.once || x.from, later = salChanges().filter(c => c.from > x.mk);
+  const back = () => { if (el.dataset.list) setTimeout(() => ACT.salMonths(), 80); };
+  openSheet({ title: 'Salaris ' + salMonthTxt(x.mk), body: `<div class="grid2">${F.money('net', 'Netto bedrag', x.net, { req: 1 })}
+      ${F.select('apply', 'Toepassen op', x.from ? 'from' : 'once', [['once', 'Alleen ' + salMonthTxt(x.mk)], ['from', cap(salMonthTxt(x.mk)) + ' en de maanden erna']], { cls: 'span2' })}</div>
+      ${later.length ? `<p class="small muted keep" style="margin-top:6px">Latere aanpassingen blijven staan: ${later.map(c => (c.once ? 'alleen ' : 'vanaf ') + salMonthTxt(c.from)).join(', ')}.</p>` : ''}
+      <p class="small muted">Uitbetaald rond ${fmtLong(x.d)}${x.got != null ? `; ontvangen: ${eur(x.got)}` : ''}.</p>`,
+    extraFoot: has ? '<button type="button" class="btn left" data-act="salMonthReset">Terug naar normaal</button>' : '',
+    actions: { salMonthReset: () => { closeSheet(); return saveConfig({ salary: { ...C().salary, changes: (C().salary.changes || []).filter(c => c.from !== x.mk) } }, 'Salaris ' + salMonthTxt(x.mk) + ' weer normaal').then(back); } },
+    onSubmit: v => { if (!isFinite(v.net) || !(v.net > 0)) throw new Error('Vul het netto bedrag in.');
+      const once = v.apply === 'once', net = r2(v.net), rest = (C().salary.changes || []).filter(c => !(c.from === x.mk && (once ? c.once : true)));
+      return saveConfig({ salary: { ...C().salary, mode: 'vast', changes: [...rest, { id: uid('sal'), from: x.mk, once, net, gross: null }] } }, `Salaris ${once ? 'alleen' : 'vanaf'} ${salMonthTxt(x.mk)}: ${eur(net)}`).then(back); } });
+};
 /* older data: salary set per pay date (salaryPlan) becomes "alleen deze maand" once */
 let SAL_MIG = false;
 function salPlanMigrate() { const pl = C().salaryPlan || {}, ks = Object.keys(pl).filter(d => pl[d]?.net != null); if (SAL_MIG || BOOT.state !== 'ready' || !ks.length) return; SAL_MIG = true;
@@ -5047,6 +5087,13 @@ function hbApply(doc, v, learn = []) {
     const out = { ...base, kind: isPot(to) ? 'sparen' : 'overboeking', category: isPot(to) ? 'Sparen' : 'Eigen overboeking', toAccountId: to.id, kid: null, kidNoMove: null };
     return { ...(own && to.id === own.id ? out : noKid(out)), toAccountId: to.id, kind: out.kind, category: out.category, groceryNo: isGrocery(to) ? null : true }; }
   return doc;
+}
+
+/* one time (asked for 4-11-2026): "Beleggen …" set as an ordinary monthly cost becomes the kind Beleggen, so Sparen shows it too */
+function belegFixOps() {
+  const cfg = C(); if (!cfg.setupDone || cfg.belegFix0411) return [];
+  const ops = all('fixed').filter(f => /beleg/i.test(f.name || '') && (f.kind === 'maand' || !f.kind)).map(f => ({ col: 'fixed', id: f.id, data: { ...f, kind: 'beleggen' } }));
+  return [...ops, { col: 'config', id: 'main', data: { ...cfg, belegFix0411: true } }];
 }
 
 /* ================= start ================= */
